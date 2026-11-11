@@ -596,6 +596,7 @@ private fun FrequencyResponseGraph(
     frequencies: List<Float>,
     gains: List<Float>,
     qs: List<Float>,
+    types: List<BiquadFilterType>,
     bandCount: Int,
     enabled: Boolean,
     lowToneDb: Float,
@@ -625,13 +626,18 @@ private fun FrequencyResponseGraph(
             val hz = 20f * 1000f.pow(fraction)
             var totalDb = 0f
             if (enabled) {
-                for (i in 0 until bandCount.coerceAtMost(minOf(frequencies.size, gains.size, qs.size))) {
+                val activeCount = bandCount.coerceAtMost(minOf(frequencies.size, gains.size, qs.size, types.size))
+                for (i in 0 until activeCount) {
                     val gain = gains[i].coerceIn(-15f, 15f)
-                    if (kotlin.math.abs(gain) < 0.001f) continue
-                    totalDb += peakingMagnitudeDb(hz, frequencies[i], qs[i], gain)
+                    val coefficients = BiquadMath.coefficients(
+                        48_000, frequencies[i], qs[i], gain, types[i]
+                    )
+                    totalDb += BiquadMath.magnitudeDb(coefficients, hz, 48_000)
                 }
-                totalDb += shelfMagnitudeDb(hz, 120f, lowToneDb, true)
-                totalDb += shelfMagnitudeDb(hz, 8_000f, highToneDb, false)
+                val lowShelf = BiquadMath.coefficients(48_000, 120f, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF)
+                val highShelf = BiquadMath.coefficients(48_000, 8_000f, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF)
+                totalDb += BiquadMath.magnitudeDb(lowShelf, hz, 48_000)
+                totalDb += BiquadMath.magnitudeDb(highShelf, hz, 48_000)
             }
             val x = left + fraction * graphWidth
             val y = yFor(totalDb)
@@ -641,69 +647,3 @@ private fun FrequencyResponseGraph(
     }
 }
 
-private fun peakingMagnitudeDb(frequency: Float, center: Float, q: Float, gainDb: Float): Float {
-    val rate = 48_000f
-    val a = 10.0.pow((gainDb / 40.0).toDouble()).toFloat()
-    val w0 = 2f * Math.PI.toFloat() * center.coerceIn(20f, 20_000f) / rate
-    val alpha = sin(w0) / (2f * q.coerceIn(0.3f, 8f))
-    val cosine = cos(w0)
-    val a0 = 1f + alpha / a
-    val b0 = (1f + alpha * a) / a0
-    val b1 = -2f * cosine / a0
-    val b2 = (1f - alpha * a) / a0
-    val a1 = b1
-    val a2 = (1f - alpha / a) / a0
-    val omega = 2f * Math.PI.toFloat() * frequency / rate
-    val c1 = cos(omega)
-    val s1 = sin(omega)
-    val c2 = cos(2f * omega)
-    val s2 = sin(2f * omega)
-    val nr = b0 + b1 * c1 + b2 * c2
-    val ni = -b1 * s1 - b2 * s2
-    val dr = 1f + a1 * c1 + a2 * c2
-    val di = -a1 * s1 - a2 * s2
-    val magnitude = sqrt((nr * nr + ni * ni) / (dr * dr + di * di).coerceAtLeast(1e-12f))
-    return 20f * kotlin.math.log10(magnitude.coerceAtLeast(1e-6f))
-}
-
-private fun shelfMagnitudeDb(frequency: Float, cutoff: Float, gainDb: Float, lowShelf: Boolean): Float {
-    if (kotlin.math.abs(gainDb) < 0.001f) return 0f
-    val rate = 48_000f
-    val a = 10.0.pow((gainDb / 40.0).toDouble()).toFloat()
-    val w0 = 2f * Math.PI.toFloat() * cutoff / rate
-    val cosine = cos(w0)
-    val alpha = sin(w0) * 0.5f * sqrt(2f)
-    val beta = 2f * sqrt(a) * alpha
-    val a0: Float
-    val b0: Float
-    val b1: Float
-    val b2: Float
-    val a1: Float
-    val a2: Float
-    if (lowShelf) {
-        b0 = a * ((a + 1f) - (a - 1f) * cosine + beta)
-        b1 = 2f * a * ((a - 1f) - (a + 1f) * cosine)
-        b2 = a * ((a + 1f) - (a - 1f) * cosine - beta)
-        a0 = (a + 1f) + (a - 1f) * cosine + beta
-        a1 = -2f * ((a - 1f) + (a + 1f) * cosine)
-        a2 = (a + 1f) + (a - 1f) * cosine - beta
-    } else {
-        b0 = a * ((a + 1f) + (a - 1f) * cosine + beta)
-        b1 = -2f * a * ((a - 1f) + (a + 1f) * cosine)
-        b2 = a * ((a + 1f) + (a - 1f) * cosine - beta)
-        a0 = (a + 1f) - (a - 1f) * cosine + beta
-        a1 = 2f * ((a - 1f) - (a + 1f) * cosine)
-        a2 = (a + 1f) - (a - 1f) * cosine - beta
-    }
-    val omega = 2f * Math.PI.toFloat() * frequency / rate
-    val c1 = cos(omega)
-    val s1 = sin(omega)
-    val c2 = cos(2f * omega)
-    val s2 = sin(2f * omega)
-    val nr = b0 + b1 * c1 + b2 * c2
-    val ni = -b1 * s1 - b2 * s2
-    val dr = a0 + a1 * c1 + a2 * c2
-    val di = -a1 * s1 - a2 * s2
-    val magnitude = sqrt((nr * nr + ni * ni) / (dr * dr + di * di).coerceAtLeast(1e-12f))
-    return 20f * kotlin.math.log10(magnitude.coerceAtLeast(1e-6f))
-}
