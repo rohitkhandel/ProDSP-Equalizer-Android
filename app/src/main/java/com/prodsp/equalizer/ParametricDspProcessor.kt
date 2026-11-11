@@ -23,14 +23,14 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     companion object {
         private const val MIN_HZ = 20f
         private const val MAX_HZ = 20_000f
-        private const val TRANSITION_SAMPLES = 960 // 20 ms at 48 kHz
-        private val BAND_COUNTS = intArrayOf(10, 15, 20, 31)
     }
 
     @Volatile private var bandCount = 10
     @Volatile private var gainsDb = FloatArray(31)
     @Volatile private var qValues = FloatArray(31) { 1.0f }
-    @Volatile private var centerFrequencies = FloatArray(31) { i -> defaultFrequency(i, 31) }
+    @Volatile private var centerFrequencies = FloatArray(31) { i ->
+        if (i < 10) defaultFrequency(i, 10) else defaultFrequency(i, 31)
+    }
     @Volatile private var lowToneDb = 0f
     @Volatile private var highToneDb = 0f
     @Volatile private var preampDb = 0f
@@ -47,7 +47,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
 
     private var compressorEnvelope = 0f
     private var compressorGain = 1f
-    private val fftSize = 512
+    private val fftSize = 2048
     private val fftReal = FloatArray(fftSize)
     private val fftImag = FloatArray(fftSize)
     private val fftWindow = FloatArray(fftSize) { i ->
@@ -57,6 +57,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Volatile private var spectrumBands = FloatArray(48)
     private var sampleRate = 0
     private var channelCount = 0
+    private val frameScratch = FloatArray(2)
     private var filters = emptyArray<Filter>()
     private var lowShelfFilter: Filter? = null
     private var highShelfFilter: Filter? = null
@@ -68,9 +69,9 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Synchronized fun bandQ(index: Int): Float = qValues.getOrElse(index) { 1f }
 
     @Synchronized fun configureBands(count: Int) {
-        bandCount = BAND_COUNTS.minBy { abs(it - count) }
-        centerFrequencies = FloatArray(31) { i -> defaultFrequency(i, bandCount) }
-        qValues = FloatArray(31) { 1f }
+        // Preserve custom frequencies and Q values when the active band
+        // count changes. The UI explicitly supplies the new layout.
+        bandCount = count.coerceIn(1, 31)
         updateTargets()
     }
 
@@ -233,7 +234,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         }
         lowShelfFilter?.setTarget(shelfCoefficients(sampleRate, 120f, lowToneDb, true))
         highShelfFilter?.setTarget(shelfCoefficients(sampleRate, 8_000f, highToneDb, false))
-        transitionRemaining = TRANSITION_SAMPLES
+        transitionRemaining = (sampleRate * 0.02f).toInt().coerceAtLeast(1)
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -252,7 +253,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val releaseCoeff = if (sampleRate > 0) exp(-1f / (releaseSeconds * sampleRate)) else 0f
         val makeup = 10.0.pow((compressorMakeupDb / 20.0).toDouble()).toFloat()
         val ceiling = 10.0.pow((limiterCeilingDb / 20.0).toDouble()).toFloat()
-        val frame = FloatArray(channelCount)
+        val frame = frameScratch
 
         while (input.remaining() >= 2 * channelCount) {
             if (active) {
