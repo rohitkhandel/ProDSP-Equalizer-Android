@@ -1236,7 +1236,7 @@ private fun ProDspContent(player: MediaController) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.weight(1f).clickable { pageScope.launch { pagerState.animateScrollToPage(3) } }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         trackName,
                         color = Color.White,
@@ -1287,73 +1287,6 @@ private fun ProDspContent(player: MediaController) {
                     contentPadding = PaddingValues(0.dp),
                     shape = CircleShape
                 ) { Text("›", fontSize = 20.sp, color = Color.White) }
-            }
-        }
-        if (player.mediaItemCount > 0) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .clickable {
-                        pageScope.launch { pagerState.animateScrollToPage(3) }
-                    },
-                color = Color(0xFF171D22),
-                shape = RoundedCornerShape(16.dp),
-                tonalElevation = 3.dp
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Canvas(Modifier.size(32.dp)) {
-                        drawCircle(Accent.copy(alpha = 0.18f))
-                        drawCircle(Accent, radius = 4.dp.toPx())
-                    }
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(
-                            trackName,
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1
-                        )
-                        Text(
-                            if (playing) "PLAYING · DSP ACTIVE" else "PAUSED · ${queueCount} TRACKS",
-                            color = Muted,
-                            fontSize = 7.sp,
-                            letterSpacing = 0.7.sp
-                        )
-                        LinearProgressIndicator(
-                            progress = {
-                                if (durationMs > 0L) {
-                                    (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-                                } else 0f
-                            },
-                            modifier = Modifier.fillMaxWidth().height(2.dp),
-                            color = Accent,
-                            trackColor = Color(0xFF303940)
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
-                            else player.seekTo(0L)
-                        },
-                        modifier = Modifier.size(34.dp)
-                    ) { Text("‹", color = Color.White, fontSize = 21.sp) }
-                    IconButton(
-                        onClick = { if (playing) player.pause() else player.play() },
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        Text(if (playing) "Ⅱ" else "▶", color = Accent, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    }
-                    IconButton(
-                        onClick = { player.seekToNextMediaItem() },
-                        enabled = player.hasNextMediaItem(),
-                        modifier = Modifier.size(34.dp)
-                    ) { Text("›", color = Color.White, fontSize = 21.sp) }
-                }
             }
         }
         if (showSaveDialog) {
