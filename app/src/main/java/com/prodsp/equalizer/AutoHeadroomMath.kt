@@ -74,14 +74,17 @@ object AutoHeadroomMath {
             }
         }.sortedArray()
 
+        // Compute trigonometric frequency terms once per analysis point,
+        // then reuse them for every active band and both tone shelves.
+        val responsePoints = frequencies.map { BiquadMath.frequencyPoint(it, sampleRate) }
         var maximumBoost = 0f
-        for (frequency in frequencies) {
+        for (point in responsePoints) {
             var responseDb = 0f
             for (filter in activeFilters) {
-                responseDb += BiquadMath.magnitudeDb(filter, frequency, sampleRate)
+                responseDb += BiquadMath.magnitudeDb(filter, point)
             }
-            responseDb += BiquadMath.magnitudeDb(lowShelf, frequency, sampleRate)
-            responseDb += BiquadMath.magnitudeDb(highShelf, frequency, sampleRate)
+            responseDb += BiquadMath.magnitudeDb(lowShelf, point)
+            responseDb += BiquadMath.magnitudeDb(highShelf, point)
             maximumBoost = max(maximumBoost, responseDb)
         }
         return maximumBoost.coerceAtLeast(0f)
