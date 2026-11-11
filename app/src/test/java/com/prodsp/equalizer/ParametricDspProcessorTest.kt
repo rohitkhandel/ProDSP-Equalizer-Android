@@ -322,7 +322,7 @@ class ParametricDspProcessorTest {
             assertEquals(48, spectrum.size)
             assertTrue(
                 "Opposite-phase stereo signal vanished from the spectrum",
-                spectrum.maxOrNull() ?: 0f > 0.2f
+                (spectrum.maxOrNull() ?: 0f) > 0.2f
             )
         } finally {
             processor.reset()
@@ -340,6 +340,46 @@ class ParametricDspProcessorTest {
             processor.setCompressorRatio(4f)
 
             assertEquals(3, notifications)
+        } finally {
+            ProDspAudioEngine.settingsChangedListener = null
+            processor.reset()
+        }
+    }
+
+    @Test
+    fun allMutableDspControlsNotifyTheDebouncedPersistenceListener() {
+        var notifications = 0
+        ProDspAudioEngine.settingsChangedListener = { notifications++ }
+        val processor = ParametricDspProcessor()
+        try {
+            processor.configureBands(10)
+            processor.setBandGain(0, 2f)
+            processor.setAllGains(FloatArray(31) { 0.5f })
+            processor.setBandFrequency(0, 150f)
+            processor.setBandQ(0, 1.2f)
+            processor.setBandType(0, BiquadFilterType.PEAK)
+            processor.setBandEnabled(0, false)
+            processor.setSoloBand(0)
+            processor.setLowToneGain(1f)
+            processor.setHighToneGain(2f)
+            processor.setLowToneFrequency(90f)
+            processor.setHighToneFrequency(9_000f)
+            processor.setPreamp(-1f)
+            processor.setAutoHeadroom(true)
+            processor.setEnabled(true)
+            processor.setPeakGuard(true)
+            processor.setCompressorEnabled(true)
+            processor.setCompressorThreshold(-20f)
+            processor.setCompressorRatio(4f)
+            processor.setCompressorAttack(8f)
+            processor.setCompressorRelease(150f)
+            processor.setCompressorMakeup(1f)
+            processor.setLimiterEnabled(true)
+            processor.setLimiterCeiling(-2f)
+            processor.setLimiterRelease(100f)
+            processor.setStereoWidth(120f)
+            processor.setStereoBalance(-10f)
+            assertTrue("DSP mutations did not notify persistence", notifications >= 25)
         } finally {
             ProDspAudioEngine.settingsChangedListener = null
             processor.reset()
