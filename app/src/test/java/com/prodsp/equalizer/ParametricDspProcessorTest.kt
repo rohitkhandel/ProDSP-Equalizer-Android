@@ -305,6 +305,31 @@ class ParametricDspProcessorTest {
     }
 
     @Test
+    fun spectrumAnalyzerDoesNotCancelOppositePhaseStereoChannels() {
+        val processor = createProcessor()
+        try {
+            val frames = 8_192
+            val input = ShortArray(frames * 2)
+            for (frame in 0 until frames) {
+                val sample = (5_000.0 * sin(2.0 * PI * 1_000.0 * frame / 48_000.0))
+                    .toInt().toShort()
+                input[frame * 2] = sample
+                input[frame * 2 + 1] = (-sample.toInt()).toShort()
+            }
+
+            process(processor, input)
+            val spectrum = processor.spectrumSnapshot()
+            assertEquals(48, spectrum.size)
+            assertTrue(
+                "Opposite-phase stereo signal vanished from the spectrum",
+                spectrum.maxOrNull() ?: 0f > 0.2f
+            )
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
     fun preampSixDbProducesExpectedRmsIncreaseWithoutClipping() {
         val processor = createProcessor()
         try {
