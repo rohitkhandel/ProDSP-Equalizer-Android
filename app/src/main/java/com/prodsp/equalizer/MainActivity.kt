@@ -1048,12 +1048,13 @@ private fun FrequencyResponseGraph(
 
     val latestBandSelected by rememberUpdatedState(onBandSelected)
     val latestBandChanged by rememberUpdatedState(onBandChanged)
+    val latestFrequencyValues by rememberUpdatedState(frequencyValues)
 
     Canvas(
         Modifier
             .fillMaxWidth()
             .height(154.dp)
-            .pointerInput(frequencyValues, gainValues, sampleRateHz, editableFrequency, types) {
+            .pointerInput(sampleRateHz, editableFrequency, activeCount) {
                 var dragIndex = -1
                 val left = 8.dp.toPx()
                 val right = size.width - 8.dp.toPx()
@@ -1068,7 +1069,7 @@ private fun FrequencyResponseGraph(
                         ((x - left) / graphWidth).coerceIn(0f, 1f)
                     )
                     return (0 until activeCount).minByOrNull { index ->
-                        kotlin.math.abs(ln(frequencyValues[index]) - ln(tappedFrequency))
+                        kotlin.math.abs(ln(latestFrequencyValues[index]) - ln(tappedFrequency))
                     } ?: 0
                 }
 
@@ -1076,7 +1077,7 @@ private fun FrequencyResponseGraph(
                     if (index !in 0 until activeCount) return
                     val frequency = if (editableFrequency) {
                         20f * (maxHz / 20f).pow(((x - left) / graphWidth).coerceIn(0f, 1f))
-                    } else frequencyValues[index]
+                    } else latestFrequencyValues[index]
                     val gain = (18f - ((y - top) / graphHeight).coerceIn(0f, 1f) * 36f)
                         .coerceIn(-15f, 15f)
                     latestBandChanged(index, frequency, gain)
