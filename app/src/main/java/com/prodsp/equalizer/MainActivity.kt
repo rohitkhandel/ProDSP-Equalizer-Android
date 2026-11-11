@@ -54,7 +54,7 @@ import kotlinx.coroutines.launch
 
 private val Accent = Color(0xFFFF2028)
 private val SpectrumGreen = Color(0xFF72E52D)
-private val BandPalette = listOf(Color(0xFF9B9A32), Color(0xFF173A9D), Color(0xFF079A3B), Color(0xFF8B347F), Color(0xFFB45A1D), Color(0xFF236D88))
+private val BandPalette = listOf(Color(0xFFFF654A), Color(0xFFFFA23F), Color(0xFFFFD34E), Color(0xFF9BCB4B), Color(0xFF39C7A2), Color(0xFF28ABD7), Color(0xFF6679E8), Color(0xFFB76CE0))
 private val Muted = Color(0xFF9AA4AF)
 private val Panel = Color(0xFF171D22)
 
@@ -656,18 +656,18 @@ private fun ProDspScreen() {
                                     )
                                 }
                             }
-                            Row(Modifier.fillMaxWidth().height(226.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                Column(Modifier.width(48.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Row(Modifier.fillMaxWidth().height(226.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Column(Modifier.width(42.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text("PRE", color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                     ProDspFader(preamp, -12f, 6f, Modifier.weight(1f).width(42.dp)) { preamp = it; dsp.setPreamp(it) }
                                     Text(String.format(Locale.US, "%+.1f", preamp), color = Color.White, fontSize = 9.sp)
                                 }
                                 for (i in 0 until bandCount) {
-                                    Column(Modifier.width(62.dp).fillMaxHeight().clickable { selectedBand = i }, horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Column(Modifier.width(46.dp).fillMaxHeight().clickable { selectedBand = i }, horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text("${i + 1}", color = if (selectedBand == i) Color.White else Muted, fontSize = 11.sp, fontWeight = FontWeight.Black)
                                         Text(formatFrequency(frequencies[i]), color = if (selectedBand == i) Accent else Muted, fontSize = 8.sp)
-                                        ProDspFader(gains[i], -15f, 15f, Modifier.weight(1f).fillMaxWidth()) { gains[i] = it; dsp.setBandGain(i, it); selectedBand = i }
-                                        Text(String.format(Locale.US, "%+.1f", gains[i]), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        ProDspFader(gains[i], -15f, 15f, Modifier.weight(1f).fillMaxWidth(), accent = bandAccent(i, bandCount)) { gains[i] = it; dsp.setBandGain(i, it); selectedBand = i }
+                                        Text(String.format(Locale.US, "%+.1f", gains[i]), color = if (bandEnabled[i]) bandAccent(i, bandCount) else Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                         Canvas(Modifier.fillMaxWidth().height(3.dp)) { if (selectedBand == i) drawLine(Accent, Offset(0f, size.height/2), Offset(size.width, size.height/2), 2.dp.toPx()) }
                                     }
                                 }
@@ -962,7 +962,7 @@ private fun ProDspScreen() {
 
 
 @Composable
-private fun ProDspFader(value: Float, min: Float, max: Float, modifier: Modifier = Modifier, onValue: (Float) -> Unit) {
+private fun ProDspFader(value: Float, min: Float, max: Float, modifier: Modifier = Modifier, accent: Color = Accent, onValue: (Float) -> Unit) {
     var heightPx by remember { mutableFloatStateOf(1f) }
     Canvas(modifier.pointerInput(min, max, heightPx) {
         detectDragGestures(onDragStart = { point ->
@@ -980,10 +980,10 @@ private fun ProDspFader(value: Float, min: Float, max: Float, modifier: Modifier
         val zeroY = bottom - ((0f - min) / (max - min)) * (bottom - top)
         val y = bottom - ((value - min) / (max - min)) * (bottom - top)
         drawLine(Color(0xFF343A40), Offset(centerX, top), Offset(centerX, bottom), 3.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(Accent.copy(alpha = 0.18f), Offset(centerX, zeroY), Offset(centerX, y), 10.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(Accent, Offset(centerX, zeroY), Offset(centerX, y), 3.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(accent.copy(alpha = 0.22f), Offset(centerX, zeroY), Offset(centerX, y), 10.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(accent, Offset(centerX, zeroY), Offset(centerX, y), 3.dp.toPx(), cap = StrokeCap.Round)
         drawCircle(Color.White, 7.dp.toPx(), Offset(centerX, y))
-        drawCircle(Accent, 3.dp.toPx(), Offset(centerX, y))
+        drawCircle(accent, 3.dp.toPx(), Offset(centerX, y))
         drawLine(Color(0xFF69737C), Offset(centerX - 8.dp.toPx(), zeroY), Offset(centerX + 8.dp.toPx(), zeroY), 1.dp.toPx())
     }
 }
@@ -1100,6 +1100,12 @@ private fun bandFrequency(index: Int, count: Int): Float = EqBandLayout.frequenc
 
 private fun formatFrequency(hz: Float): String =
     if (hz >= 1000f) String.format(Locale.US, "%.2f kHz", hz / 1000f) else String.format(Locale.US, "%.0f Hz", hz)
+
+private fun bandAccent(index: Int, count: Int): Color {
+    val paletteIndex = (index * (BandPalette.size - 1) / (count - 1).coerceAtLeast(1))
+        .coerceIn(0, BandPalette.lastIndex)
+    return BandPalette[paletteIndex]
+}
 
 @Composable
 private fun FrequencyResponseGraph(
