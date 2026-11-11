@@ -8,6 +8,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -238,11 +241,26 @@ private fun ProDspScreen() {
     Surface(Modifier.fillMaxSize(), color = Color(0xFF0B0D10)) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
             item {
-                Column(Modifier.padding(top = 22.dp)) {
-                    Text("PRODSP  /  AUDIO LAB", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.2.sp)
-                    Text("Equalizer", color = Color.White, fontSize = 31.sp, fontWeight = FontWeight.Bold)
-                    Text("Custom parametric sound engine", color = Muted, fontSize = 13.sp)
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("PRO DSP", color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 2.4.sp)
+                        Text("EQUALIZER", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(if (dspOn) "ON" else "OFF", color = if (dspOn) Accent else Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Switch(checked = dspOn, onCheckedChange = { dspOn = it; dsp.setEnabled(it) })
+                    }
                 }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    Text("EQUALIZER", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                    Text("TONE", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                    Text("DYNAMICS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                }
+                Divider(color = Color(0xFF39434A), thickness = 1.dp)
             }
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
@@ -326,15 +344,32 @@ private fun ProDspScreen() {
                             dsp.setBandQ(selectedBand, q)
                         }, 0.3f..8f, "%.2f")
                         Text("BAND GAIN", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                        for (i in 0 until bandCount) {
-                            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(formatFrequency(frequencies[i]), color = if (selectedBand == i) Accent else Color(0xFFDCE3E8), fontSize = 12.sp)
-                                    Text(String.format(Locale.US, "%+.1f dB", gains[i]), color = Accent, fontSize = 12.sp)
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Slider(modifier = Modifier.weight(1f), value = gains[i], onValueChange = { value -> gains[i] = value; dsp.setBandGain(i, value) }, valueRange = -15f..15f)
-                                    TextButton(onClick = { selectedBand = i }) { Text(if (selectedBand == i) "EDITING" else "EDIT", fontSize = 9.sp) }
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).height(166.dp),
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            for (i in 0 until bandCount) {
+                                Column(
+                                    Modifier.width(48.dp).height(160.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(String.format(Locale.US, "%+.0f", gains[i]), color = if (selectedBand == i) Accent else Color(0xFFDCE3E8), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Box(Modifier.width(34.dp).height(112.dp), contentAlignment = Alignment.Center) {
+                                        Slider(
+                                            modifier = Modifier.width(112.dp).height(34.dp).rotate(270f),
+                                            value = gains[i],
+                                            onValueChange = { value -> gains[i] = value; dsp.setBandGain(i, value); selectedBand = i },
+                                            valueRange = -15f..15f
+                                        )
+                                    }
+                                    Text(
+                                        formatFrequency(frequencies[i]),
+                                        color = if (selectedBand == i) Accent else Muted,
+                                        fontSize = 9.sp,
+                                        fontWeight = if (selectedBand == i) FontWeight.Bold else FontWeight.Normal
+                                    )
                                 }
                             }
                         }
