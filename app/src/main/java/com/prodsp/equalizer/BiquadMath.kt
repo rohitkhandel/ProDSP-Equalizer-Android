@@ -135,29 +135,46 @@ object BiquadMath {
     }
 
     /** Returns this filter's magnitude response at one frequency, in dB. */
-    fun magnitudeDb(
-        coefficients: BiquadCoefficients,
-        frequencyHz: Float,
-        sampleRate: Int
-    ): Float {
-        if (sampleRate <= 0) return 0f
-        val frequency = frequencyHz.coerceIn(0f, sampleRate * 0.5f)
-        val omega = (2.0 * PI * frequency / sampleRate).toFloat()
-        val c1 = cos(omega)
-        val s1 = sin(omega)
-        val c2 = cos(2f * omega)
-        val s2 = sin(2f * omega)
+    data class FrequencyPoint(
+        val sampleRate: Int,
+        val frequencyHz: Float,
+        val cos1: Float,
+        val sin1: Float,
+        val cos2: Float,
+        val sin2: Float
+    )
 
-        val numeratorReal = coefficients.b0 + coefficients.b1 * c1 + coefficients.b2 * c2
-        val numeratorImag = -coefficients.b1 * s1 - coefficients.b2 * s2
-        val denominatorReal = 1f + coefficients.a1 * c1 + coefficients.a2 * c2
-        val denominatorImag = -coefficients.a1 * s1 - coefficients.a2 * s2
+    fun frequencyPoint(frequencyHz: Float, sampleRate: Int): FrequencyPoint {
+        val safeRate = sampleRate.coerceAtLeast(1)
+        val safeFrequency = frequencyHz.coerceIn(0f, safeRate * 0.5f)
+        val omega = (2.0 * PI * safeFrequency / safeRate).toFloat()
+        return FrequencyPoint(
+            sampleRate = safeRate,
+            frequencyHz = safeFrequency,
+            cos1 = cos(omega),
+            sin1 = sin(omega),
+            cos2 = cos(2f * omega),
+            sin2 = sin(2f * omega)
+        )
+    }
 
+    fun magnitudeDb(coefficients: BiquadCoefficients, frequency: FrequencyPoint): Float {
+        val numeratorReal =
+            coefficients.b0 + coefficients.b1 * frequency.cos1 + coefficients.b2 * frequency.cos2
+        val numeratorImag =
+            -coefficients.b1 * frequency.sin1 - coefficients.b2 * frequency.sin2
+        val denominatorReal =
+            1f + coefficients.a1 * frequency.cos1 + coefficients.a2 * frequency.cos2
+        val denominatorImag =
+            -coefficients.a1 * frequency.sin1 - coefficients.a2 * frequency.sin2
         val numeratorPower = numeratorReal * numeratorReal + numeratorImag * numeratorImag
         val denominatorPower = denominatorReal * denominatorReal + denominatorImag * denominatorImag
-        val magnitude = sqrt(numeratorPower / denominatorPower.coerceAtLeast(1e-20f))
-        return (20f * log10(magnitude.coerceAtLeast(1e-10f))).coerceIn(-200f, 100f)
+        val magnitude = sqrt(numeratorPower / denominatorPower.coerceAtLeast(1e-18f))
+        return 20f * log10(magnitude.coerceAtLeast(1e-9f))
     }
+
+    fun magnitudeDb(coefficients: BiquadCoefficients, frequencyHz: Float, sampleRate: Int): Float =
+        magnitudeDb(coefficients, frequencyPoint(frequencyHz, sampleRate))
 
     fun combinedMagnitudeDb(
         filters: List<Pair<BiquadCoefficients, Int>>,
