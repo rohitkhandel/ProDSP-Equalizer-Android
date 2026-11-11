@@ -92,6 +92,85 @@ class ParametricDspProcessorTest {
     }
 
     @Test
+    fun disabledBandLeavesItsSignalRegionUnchanged() {
+        val processor = createProcessor()
+        try {
+            processor.setBandFrequency(0, 1_000f)
+            processor.setBandGain(0, 9f)
+            processor.setBandEnabled(0, false)
+            processor.flush()
+
+            val frames = 6_000
+            val input = ShortArray(frames * 2)
+            for (frame in 0 until frames) {
+                val sample = (3_000.0 * sin(2.0 * PI * 1_000.0 * frame / 48_000.0)).toInt().toShort()
+                input[frame * 2] = sample
+                input[frame * 2 + 1] = sample
+            }
+            val output = process(processor, input)
+            var inputPower = 0.0
+            var outputPower = 0.0
+            for (frame in frames / 2 until frames) {
+                val source = input[frame * 2].toDouble()
+                val rendered = output[frame * 2].toDouble()
+                inputPower += source * source
+                outputPower += rendered * rendered
+            }
+            assertEquals(1.0, sqrt(outputPower / inputPower), 0.01)
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
+    fun soloModeAuditionsOneBandAndBypassesTheOthers() {
+        val processor = createProcessor()
+        try {
+            processor.setBandFrequency(0, 1_000f)
+            processor.setBandQ(0, 1f)
+            processor.setBandGain(0, 6f)
+            processor.setBandFrequency(1, 2_000f)
+            processor.setBandQ(1, 1f)
+            processor.setBandGain(1, 6f)
+            processor.setSoloBand(0)
+            processor.flush()
+
+            val frames = 24_000
+            val input = ShortArray(frames * 2)
+            for (frame in 0 until frames) {
+                val time = frame.toDouble() / 48_000.0
+                val sample = (
+                    1_000.0 * sin(2.0 * PI * 1_000.0 * time) +
+                    1_000.0 * sin(2.0 * PI * 2_000.0 * time)
+                ).toInt().toShort()
+                input[frame * 2] = sample
+                input[frame * 2 + 1] = sample
+            }
+            val output = process(processor, input)
+
+            fun componentAmplitude(pcm: ShortArray, frequencyHz: Double): Double {
+                var sum = 0.0
+                val startFrame = frames / 2
+                for (frame in startFrame until frames) {
+                    sum += pcm[frame * 2].toDouble() *
+                        sin(2.0 * PI * frequencyHz * frame / 48_000.0)
+                }
+                return 2.0 * sum / (frames - startFrame)
+            }
+
+            val inputOneK = componentAmplitude(input, 1_000.0)
+            val inputTwoK = componentAmplitude(input, 2_000.0)
+            val outputOneK = componentAmplitude(output, 1_000.0)
+            val outputTwoK = componentAmplitude(output, 2_000.0)
+
+            assertEquals(10.0.pow(6.0 / 20.0), outputOneK / inputOneK, 0.08)
+            assertEquals(1.0, outputTwoK / inputTwoK, 0.04)
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
     fun preampSixDbProducesExpectedRmsIncreaseWithoutClipping() {
         val processor = createProcessor()
         try {
