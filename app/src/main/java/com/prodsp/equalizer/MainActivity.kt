@@ -89,7 +89,11 @@ private fun ProDspScreen() {
     var limiterCeiling by remember { mutableFloatStateOf(-1f) }
     var bandCount by remember { mutableIntStateOf(10) }
     var selectedBand by remember { mutableIntStateOf(0) }
-    val frequencies = remember { mutableStateListOf<Float>().apply { repeat(31) { add(bandFrequency(it, 31)) } } }
+    val frequencies = remember { mutableStateListOf<Float>().apply {
+        val initialLayout = EqBandLayout.frequencies(10)
+        val expandedLayout = EqBandLayout.frequencies(31)
+        repeat(31) { index -> add(if (index < initialLayout.size) initialLayout[index] else expandedLayout[index]) }
+    } }
     val bandQs = remember { mutableStateListOf<Float>().apply { repeat(31) { add(1f) } } }
     var preamp by remember { mutableFloatStateOf(0f) }
     var lowTone by remember { mutableFloatStateOf(0f) }
@@ -159,6 +163,39 @@ private fun ProDspScreen() {
     }
 
     fun syncGains() { dsp.setAllGains(FloatArray(31) { gains[it] }) }
+
+    /**
+     * Changes active EQ density while keeping the existing tonal shape.
+     * Gain is interpolated on a logarithmic frequency axis.
+     */
+    fun changeBandCount(nextCount: Int) {
+        val safeCount = nextCount.coerceIn(1, EqBandLayout.MAX_BANDS)
+        if (safeCount == bandCount) return
+
+        val oldCount = bandCount
+        val oldFrequencies = FloatArray(oldCount) { frequencies[it] }
+        val oldGains = FloatArray(oldCount) { gains[it] }
+        val oldQs = FloatArray(oldCount) { bandQs[it] }
+        val nextFrequencies = EqBandLayout.frequencies(safeCount)
+        val nextGains = EqBandLayout.resampleGains(oldFrequencies, oldGains, nextFrequencies)
+        val nextQs = EqBandLayout.resampleNearest(oldFrequencies, oldQs, nextFrequencies)
+
+        bandCount = safeCount
+        dsp.configureBands(safeCount)
+        for (index in 0 until EqBandLayout.MAX_BANDS) {
+            if (index < safeCount) {
+                frequencies[index] = nextFrequencies[index]
+                gains[index] = nextGains[index].coerceIn(-15f, 15f)
+                bandQs[index] = nextQs[index].coerceIn(0.3f, 8f)
+                dsp.setBandFrequency(index, frequencies[index])
+                dsp.setBandQ(index, bandQs[index])
+            } else {
+                gains[index] = 0f
+            }
+        }
+        syncGains()
+        selectedBand = selectedBand.coerceIn(0, safeCount - 1)
+    }
 
     fun savePreset(nameInput: String) {
         val name = nameInput.trim().take(24)
@@ -302,7 +339,7 @@ private fun ProDspScreen() {
                                 }
                                 Column(Modifier.width(42.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                                     Text("ADD", color = Muted, fontSize = 9.sp)
-                                    TextButton(onClick = { if (bandCount < 31) { bandCount++; dsp.configureBands(bandCount); frequencies[bandCount - 1] = bandFrequency(bandCount - 1, bandCount) } }) { Text("+", color = Accent, fontSize = 24.sp) }
+                                    TextButton(onClick = { if (bandCount < EqBandLayout.MAX_BANDS) changeBandCount(bandCount + 1) }) { Text("+", color = Accent, fontSize = 24.sp) }
                                 }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -502,8 +539,7 @@ private fun ValueSlider(label: String, value: Float, onValue: (Float) -> Unit, r
     }
 }
 
-private fun bandFrequency(index: Int, count: Int): Float =
-    20f * (20000f / 20f).pow(index.toFloat() / (count - 1).coerceAtLeast(1))
+private fun bandFrequency(index: Int, count: Int): Float = EqBandLayout.frequencyAt(index, count)
 
 private fun formatFrequency(hz: Float): String =
     if (hz >= 1000f) String.format(Locale.US, "%.2f kHz", hz / 1000f) else String.format(Locale.US, "%.0f Hz", hz)
