@@ -401,7 +401,7 @@ private fun ProDspScreen() {
             HorizontalPager(state = pagerState, modifier = Modifier.weight(1f).fillMaxWidth()) { page ->
                 when (page) {
                     0 -> {
-                        Column(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.fillMaxSize().padding(horizontal = 12.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Column {
                                     Text("PARAMETRIC EQ", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -516,7 +516,7 @@ private fun ProDspScreen() {
                         }
                     }
                     1 -> {
-                        Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                             Text("TONE CONTROL", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
                             Text("SHELF FILTERS", color = Muted, fontSize = 9.sp, letterSpacing = 1.5.sp)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -584,13 +584,6 @@ private fun ProDspScreen() {
                             OutlinedButton(onClick = { for (i in 0 until 31) gains[i] = 0f; syncGains() }) { Text("RESET EQUALIZER") }
                             Text("Processing is currently applied to this app's local player, not system-wide audio.", color = Muted, fontSize = 10.sp)
                         }
-                    }
-                }
-            }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
-                listOf("EQ", "TONE", "DYN", "LIB").forEachIndexed { index, label ->
-                    TextButton(onClick = { pageScope.launch { pagerState.animateScrollToPage(index) } }) {
-                        Text(label, color = if (pagerState.currentPage == index) Accent else Muted, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
                     }
                 }
             }
