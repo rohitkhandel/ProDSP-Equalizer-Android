@@ -134,6 +134,8 @@ private fun ProDspScreen() {
     val bandEnabled = remember { mutableStateListOf<Boolean>().apply { repeat(31) { add(true) } } }
     var showFilterMenu by remember { mutableStateOf(false) }
     var preamp by remember { mutableFloatStateOf(0f) }
+    var autoHeadroomOn by remember { mutableStateOf(false) }
+    var autoHeadroomDb by remember { mutableFloatStateOf(0f) }
     var lowTone by remember { mutableFloatStateOf(0f) }
     var highTone by remember { mutableFloatStateOf(0f) }
     var lowToneFrequency by remember { mutableFloatStateOf(120f) }
@@ -231,6 +233,8 @@ private fun ProDspScreen() {
             spectrum = dsp.spectrumSnapshot()
             val activeRate = dsp.currentSampleRate()
             if (sampleRateHz != activeRate) sampleRateHz = activeRate
+            val headroom = dsp.currentAutoHeadroomDb()
+            if (kotlin.math.abs(autoHeadroomDb - headroom) >= 0.02f) autoHeadroomDb = headroom
             delay(33)
         }
     }
@@ -427,6 +431,7 @@ private fun ProDspScreen() {
             .put("types", JSONArray(bandTypes.map { it.name }))
             .put("bandEnabled", JSONArray(bandEnabled.toList()))
             .put("preamp", preamp)
+            .put("autoHeadroom", autoHeadroomOn)
             .put("lowTone", lowTone)
             .put("highTone", highTone)
             .put("lowToneFrequency", lowToneFrequency)
@@ -482,6 +487,7 @@ private fun ProDspScreen() {
                 dsp.setBandType(i, bandTypes[i])
             }
             preamp = data.optDouble("preamp", 0.0).toFloat()
+            autoHeadroomOn = data.optBoolean("autoHeadroom", false)
             lowTone = data.optDouble("lowTone", 0.0).toFloat()
             highTone = data.optDouble("highTone", 0.0).toFloat()
             lowToneFrequency = data.optDouble("lowToneFrequency", 120.0).toFloat().coerceIn(30f, 800f)
@@ -494,6 +500,7 @@ private fun ProDspScreen() {
             dsp.setHighToneGain(highTone)
             dsp.setLowToneFrequency(lowToneFrequency)
             dsp.setHighToneFrequency(highToneFrequency)
+            dsp.setAutoHeadroom(autoHeadroomOn)
             dsp.setStereoBalance(balance)
             dsp.setStereoWidth(width)
             deviceEffects.setBassStrength((bass * 10).toInt())
@@ -678,6 +685,36 @@ private fun ProDspScreen() {
                                 }
 
                             }
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Switch(
+                                        checked = autoHeadroomOn,
+                                        onCheckedChange = {
+                                            autoHeadroomOn = it
+                                            dsp.setAutoHeadroom(it)
+                                        },
+                                        modifier = Modifier.height(32.dp)
+                                    )
+                                    Column {
+                                        Text("AUTO HEADROOM", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            if (autoHeadroomOn) "PREAMP COMPENSATION ACTIVE" else "PROTECT AGAINST EQ BOOST CLIPPING",
+                                            color = Muted,
+                                            fontSize = 7.sp
+                                        )
+                                    }
+                                }
+                                Text(
+                                    if (autoHeadroomOn) String.format(Locale.US, "−%.1f dB", autoHeadroomDb) else "OFF",
+                                    color = if (autoHeadroomOn) SpectrumGreen else Muted,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text("BAND ${selectedBand + 1}  ·  ${formatFrequency(frequencies[selectedBand])}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 if (parametricMode) {
@@ -787,6 +824,7 @@ private fun ProDspScreen() {
                                 lowToneFrequencyHz = lowToneFrequency,
                                 highToneFrequencyHz = highToneFrequency,
                                 sampleRateHz = sampleRateHz,
+                                autoHeadroomDb = if (autoHeadroomOn) autoHeadroomDb else 0f,
                                 selectedBand = selectedBand,
                                 soloBandIndex = soloBandIndex,
                                 editableFrequency = parametricMode,
@@ -1136,6 +1174,7 @@ private fun FrequencyResponseGraph(
     lowToneFrequencyHz: Float,
     highToneFrequencyHz: Float,
     sampleRateHz: Int,
+    autoHeadroomDb: Float,
     selectedBand: Int,
     soloBandIndex: Int,
     editableFrequency: Boolean,
@@ -1152,7 +1191,7 @@ private fun FrequencyResponseGraph(
     val typeValues = types.take(activeCount)
     val curveValues = remember(
         frequencyValues, gainValues, qValues, typeValues, enabledValues, enabled, soloBandIndex,
-        lowToneDb, highToneDb, lowToneFrequencyHz, highToneFrequencyHz, sampleRateHz
+        lowToneDb, highToneDb, lowToneFrequencyHz, highToneFrequencyHz, sampleRateHz, autoHeadroomDb
     ) {
         if (!enabled) {
             FloatArray(221)
@@ -1186,7 +1225,7 @@ private fun FrequencyResponseGraph(
                 }
                 totalDb += BiquadMath.magnitudeDb(lowShelf, hz, sampleRateHz)
                 totalDb += BiquadMath.magnitudeDb(highShelf, hz, sampleRateHz)
-                totalDb
+                totalDb - autoHeadroomDb
             }
         }
     }
