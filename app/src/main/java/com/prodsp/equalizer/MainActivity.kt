@@ -159,59 +159,67 @@ private fun ProDspContent(player: MediaController) {
     val context = LocalContext.current
     val dsp = ProDspAudioEngine.processor
     val deviceEffects = ProDspAudioEngine.deviceEffects
+    val initialDsp = remember(dsp) { dsp.snapshot() }
+    val initialDeviceEffects = remember(deviceEffects) { deviceEffects.snapshot() }
+    val preferences = remember { context.getSharedPreferences("prodsp_presets", android.content.Context.MODE_PRIVATE) }
+
     var trackName by remember(player) { mutableStateOf(player.currentMediaItem?.mediaMetadata?.title?.toString() ?: "No track selected") }
     var queueCount by remember(player) { mutableIntStateOf(player.mediaItemCount) }
-    var currentPositionMs by remember { mutableLongStateOf(0L) }
-    var durationMs by remember { mutableLongStateOf(0L) }
+    var currentPositionMs by remember(player) { mutableLongStateOf(player.currentPosition.coerceAtLeast(0L)) }
+    var durationMs by remember(player) { mutableLongStateOf(player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L) }
     var seeking by remember { mutableStateOf(false) }
     var replaceQueueOnPick by remember { mutableStateOf(true) }
-    var status by remember { mutableStateOf("Choose a music file to start") }
+    var status by remember(player) { mutableStateOf(if (player.isPlaying) "Playing · background DSP service connected" else if (player.mediaItemCount > 0) "Playback queue restored" else "Choose a music file to start") }
     var spectrum by remember { mutableStateOf(FloatArray(48)) }
-    var sampleRateHz by remember { mutableIntStateOf(48_000) }
+    var sampleRateHz by remember(dsp) { mutableIntStateOf(dsp.currentSampleRate()) }
     var playing by remember(player) { mutableStateOf(player.isPlaying) }
     var shuffleEnabled by remember(player) { mutableStateOf(player.shuffleModeEnabled) }
     var repeatMode by remember(player) { mutableIntStateOf(player.repeatMode) }
-    var dspOn by remember { mutableStateOf(true) }
-    var peakGuard by remember { mutableStateOf(true) }
-    var compressorOn by remember { mutableStateOf(false) }
-    var compressorThreshold by remember { mutableFloatStateOf(-18f) }
-    var compressorRatio by remember { mutableFloatStateOf(3f) }
-    var compressorAttack by remember { mutableFloatStateOf(10f) }
-    var compressorRelease by remember { mutableFloatStateOf(120f) }
-    var compressorMakeup by remember { mutableFloatStateOf(0f) }
-    var limiterOn by remember { mutableStateOf(true) }
-    var limiterCeiling by remember { mutableFloatStateOf(-1f) }
-    var limiterRelease by remember { mutableFloatStateOf(80f) }
-    var bandCount by remember { mutableIntStateOf(10) }
-    var parametricMode by remember { mutableStateOf(false) }
+    var dspOn by remember(dsp, deviceEffects) { mutableStateOf(initialDsp.enabled && initialDeviceEffects.enabled) }
+    var peakGuard by remember(dsp) { mutableStateOf(initialDsp.peakGuard) }
+    var compressorOn by remember(dsp) { mutableStateOf(initialDsp.compressorEnabled) }
+    var compressorThreshold by remember(dsp) { mutableFloatStateOf(initialDsp.compressorThresholdDb) }
+    var compressorRatio by remember(dsp) { mutableFloatStateOf(initialDsp.compressorRatio) }
+    var compressorAttack by remember(dsp) { mutableFloatStateOf(initialDsp.compressorAttackMs) }
+    var compressorRelease by remember(dsp) { mutableFloatStateOf(initialDsp.compressorReleaseMs) }
+    var compressorMakeup by remember(dsp) { mutableFloatStateOf(initialDsp.compressorMakeupDb) }
+    var limiterOn by remember(dsp) { mutableStateOf(initialDsp.limiterEnabled) }
+    var limiterCeiling by remember(dsp) { mutableFloatStateOf(initialDsp.limiterCeilingDb) }
+    var limiterRelease by remember(dsp) { mutableFloatStateOf(initialDsp.limiterReleaseMs) }
+    var bandCount by remember(dsp) { mutableIntStateOf(initialDsp.bandCount) }
+    var parametricMode by remember { mutableStateOf(preferences.getBoolean("parametric_mode", false)) }
     var parametricBackup by remember { mutableStateOf<ParametricBackup?>(null) }
     var selectedBand by remember { mutableIntStateOf(0) }
-    var soloBandIndex by remember { mutableIntStateOf(-1) }
+    var soloBandIndex by remember(dsp) { mutableIntStateOf(initialDsp.soloBandIndex) }
     var activeAbSlot by remember { mutableIntStateOf(0) }
     var abSlotA by remember { mutableStateOf<EqCompareSlot?>(null) }
     var abSlotB by remember { mutableStateOf<EqCompareSlot?>(null) }
-    val frequencies = remember { mutableStateListOf<Float>().apply {
-        val initialLayout = EqBandLayout.frequencies(10)
-        val expandedLayout = EqBandLayout.frequencies(31)
-        repeat(31) { index -> add(if (index < initialLayout.size) initialLayout[index] else expandedLayout[index]) }
-    } }
-    val bandQs = remember { mutableStateListOf<Float>().apply { repeat(31) { add(1f) } } }
-    val bandTypes = remember { mutableStateListOf<BiquadFilterType>().apply { repeat(31) { add(BiquadFilterType.PEAK) } } }
-    val bandEnabled = remember { mutableStateListOf<Boolean>().apply { repeat(31) { add(true) } } }
+    val frequencies = remember(dsp) {
+        mutableStateListOf<Float>().apply { initialDsp.centerFrequencies.forEach { add(it) } }
+    }
+    val bandQs = remember(dsp) {
+        mutableStateListOf<Float>().apply { initialDsp.qValues.forEach { add(it) } }
+    }
+    val bandTypes = remember(dsp) {
+        mutableStateListOf<BiquadFilterType>().apply { initialDsp.bandTypes.forEach { add(it) } }
+    }
+    val bandEnabled = remember(dsp) {
+        mutableStateListOf<Boolean>().apply { initialDsp.bandEnabled.forEach { add(it) } }
+    }
     var showFilterMenu by remember { mutableStateOf(false) }
-    var preamp by remember { mutableFloatStateOf(0f) }
-    var autoHeadroomOn by remember { mutableStateOf(false) }
-    var autoHeadroomDb by remember { mutableFloatStateOf(0f) }
-    var lowTone by remember { mutableFloatStateOf(0f) }
-    var highTone by remember { mutableFloatStateOf(0f) }
-    var lowToneFrequency by remember { mutableFloatStateOf(120f) }
-    var highToneFrequency by remember { mutableFloatStateOf(8_000f) }
-    var balance by remember { mutableFloatStateOf(0f) }
-    var bass by remember { mutableFloatStateOf(0f) }
-    var width by remember { mutableFloatStateOf(100f) }
-    var virtualizerStrength by remember { mutableFloatStateOf(0f) }
-    val gains = remember { mutableStateListOf<Float>().apply { repeat(31) { add(0f) } } }
-    val preferences = remember { context.getSharedPreferences("prodsp_presets", android.content.Context.MODE_PRIVATE) }
+    var preamp by remember(dsp) { mutableFloatStateOf(initialDsp.preampDb) }
+    var autoHeadroomOn by remember(dsp) { mutableStateOf(initialDsp.autoHeadroomEnabled) }
+    var autoHeadroomDb by remember(dsp) { mutableFloatStateOf(dsp.currentAutoHeadroomDb()) }
+    var lowTone by remember(dsp) { mutableFloatStateOf(initialDsp.lowToneDb) }
+    var highTone by remember(dsp) { mutableFloatStateOf(initialDsp.highToneDb) }
+    var lowToneFrequency by remember(dsp) { mutableFloatStateOf(initialDsp.lowToneFrequencyHz) }
+    var highToneFrequency by remember(dsp) { mutableFloatStateOf(initialDsp.highToneFrequencyHz) }
+    var balance by remember(dsp) { mutableFloatStateOf(initialDsp.stereoBalancePercent) }
+    var bass by remember(deviceEffects) { mutableFloatStateOf(initialDeviceEffects.bassStrength / 10f) }
+    var width by remember(dsp) { mutableFloatStateOf(initialDsp.stereoWidthPercent) }
+    var virtualizerStrength by remember(deviceEffects) { mutableFloatStateOf(initialDeviceEffects.virtualizerStrength / 10f) }
+    val gains = remember(dsp) { mutableStateListOf<Float>().apply { initialDsp.gainsDb.forEach { add(it) } } }
+
     val savedPresets = remember { mutableStateListOf<String>().apply {
         addAll(preferences.getStringSet("names", emptySet())?.sorted() ?: emptyList())
     } }
@@ -458,6 +466,7 @@ private fun ProDspContent(player: MediaController) {
             }
         }
         parametricMode = enabled
+        preferences.edit().putBoolean("parametric_mode", enabled).apply()
     }
 
     fun deletePreset(name: String) {
