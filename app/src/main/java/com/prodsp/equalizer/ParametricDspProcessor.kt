@@ -292,10 +292,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             // Mid/Side stereo width. 100% is transparent, 0% folds to mono,
             // and values above 100% increase the side component.
             if (channelCount == 2 && width != 1f) {
-                val mid = (frame[0] + frame[1]) * 0.5f
-                val side = (frame[0] - frame[1]) * 0.5f * width
-                frame[0] = mid + side
-                frame[1] = mid - side
+                val left = frame[0]
+                val right = frame[1]
+                frame[0] = StereoWidthMath.left(left, right, width * 100f)
+                frame[1] = StereoWidthMath.right(left, right, width * 100f)
             }
             for (channel in 0 until channelCount) framePeak = maxOf(framePeak, abs(frame[channel]))
 
