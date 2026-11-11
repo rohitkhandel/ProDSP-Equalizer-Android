@@ -127,7 +127,7 @@ class ParametricDspProcessorTest {
         val processor = createProcessor()
         try {
             processor.setBandFrequency(0, 1_000f)
-            processor.setBandQ(0, 1f)
+            processor.setBandQ(0, 8f)
             processor.setBandGain(0, 6f)
             processor.setBandFrequency(1, 2_000f)
             processor.setBandQ(1, 1f)
@@ -164,7 +164,7 @@ class ParametricDspProcessorTest {
             val outputTwoK = componentAmplitude(output, 2_000.0)
 
             assertEquals(10.0.pow(6.0 / 20.0), outputOneK / inputOneK, 0.08)
-            assertEquals(1.0, outputTwoK / inputTwoK, 0.04)
+            assertEquals(1.0, outputTwoK / inputTwoK, 0.02)
         } finally {
             processor.reset()
         }
