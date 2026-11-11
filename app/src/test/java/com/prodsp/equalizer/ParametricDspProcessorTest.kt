@@ -330,6 +330,23 @@ class ParametricDspProcessorTest {
     }
 
     @Test
+    fun liveDspChangesNotifyTheDebouncedPersistenceHook() {
+        val processor = createProcessor()
+        var notifications = 0
+        ProDspAudioEngine.settingsChangedListener = { notifications++ }
+        try {
+            processor.setBandGain(0, 4f)
+            processor.setPreamp(1.5f)
+            processor.setCompressorRatio(4f)
+
+            assertEquals(3, notifications)
+        } finally {
+            ProDspAudioEngine.settingsChangedListener = null
+            processor.reset()
+        }
+    }
+
+    @Test
     fun preampSixDbProducesExpectedRmsIncreaseWithoutClipping() {
         val processor = createProcessor()
         try {
