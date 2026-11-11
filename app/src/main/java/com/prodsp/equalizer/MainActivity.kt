@@ -7,6 +7,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -39,6 +46,7 @@ import kotlin.math.sin
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val Accent = Color(0xFFFF2028)
 private val SpectrumGreen = Color(0xFF72E52D)
@@ -94,6 +102,9 @@ private fun ProDspScreen() {
     } }
     var showSaveDialog by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
+    val pageTitles = listOf("EQUALIZER", "TONE", "DYNAMICS", "PRESETS")
+    val pagerState = rememberPagerState(pageCount = { pageTitles.size })
+    val pageScope = rememberCoroutineScope()
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
@@ -240,177 +251,219 @@ private fun ProDspScreen() {
         syncGains()
     }
 
-    Surface(Modifier.fillMaxSize(), color = Color.Black) {
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item {
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column {
-                        Text("PRODSP", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                        Text("EQUALIZER", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Black)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (dspOn) "ON" else "OFF", color = if (dspOn) SpectrumGreen else Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Switch(checked = dspOn, onCheckedChange = { dspOn = it; dsp.setEnabled(it) })
-                    }
+    Surface(Modifier.fillMaxSize(), color = Color(0xFF050607)) {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 14.dp, top = 12.dp, bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("PRODSP", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 3.sp)
+                    Text("EQUALIZER", color = Color(0xFFB7BEC5), fontSize = 10.sp, letterSpacing = 2.sp)
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("EQU", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Text("TONE", color = Muted, fontSize = 12.sp)
-                    Text("LIMIT", color = Muted, fontSize = 12.sp)
-                    Text("DYNAMICS", color = Muted, fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (dspOn) "DSP ACTIVE" else "DSP BYPASS", color = if (dspOn) Accent else Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(8.dp))
+                    Switch(checked = dspOn, onCheckedChange = { dspOn = it; dsp.setEnabled(it) })
                 }
             }
-            item {
-                Row(Modifier.fillMaxWidth().height(560.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Column(Modifier.width(66.dp).fillMaxHeight().padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
-                        Text("PRE", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        Box(Modifier.weight(1f).width(48.dp).padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                            Slider(modifier = Modifier.width(500.dp).height(38.dp).rotate(270f), value = preamp, onValueChange = { preamp = it; dsp.setPreamp(it) }, valueRange = -12f..6f, colors = SliderDefaults.colors(thumbColor = Color.LightGray, activeTrackColor = Accent, inactiveTrackColor = Color.DarkGray))
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                pageTitles.forEachIndexed { index, title ->
+                    val active = pagerState.currentPage == index
+                    TextButton(onClick = { pageScope.launch { pagerState.animateScrollToPage(index) } }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp)) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(title, color = if (active) Color.White else Color(0xFF68727B), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.7.sp)
+                            Spacer(Modifier.height(5.dp))
+                            Canvas(Modifier.fillMaxWidth().height(2.dp)) { if (active) drawLine(Accent, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 2.dp.toPx()) }
                         }
-                        Text(String.format(Locale.US, "%+.1f dB", preamp), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
-                    for (i in 0 until bandCount) {
-                        Column(
-                            Modifier.width(184.dp).fillMaxHeight().padding(vertical = 2.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Surface(color = BandPalette[i % BandPalette.size], shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxSize()) {
-                                Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
-                                    Text("BAND ${i + 1}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                        Slider(
-                                            modifier = Modifier.width(420.dp).height(38.dp).rotate(270f),
-                                            value = gains[i],
-                                            onValueChange = { value -> gains[i] = value; dsp.setBandGain(i, value); selectedBand = i },
-                                            valueRange = -15f..15f,
-                                            colors = SliderDefaults.colors(thumbColor = Color(0xFFE4E4E4), activeTrackColor = Accent, inactiveTrackColor = Color(0xFF4C4C4C))
-                                        )
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Surface(color = Color.Black, shape = RoundedCornerShape(18.dp)) {
-                                            Text("L+R", Modifier.padding(horizontal = 13.dp, vertical = 5.dp), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                        Surface(color = Color.Black, shape = RoundedCornerShape(18.dp)) {
-                                            Text("PEAK", Modifier.padding(horizontal = 13.dp, vertical = 5.dp), color = Color.White, fontSize = 10.sp)
-                                        }
-                                    }
-                                    Text("Q  ${String.format(Locale.US, "%.2f", bandQs[i])}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    Slider(value = bandQs[i], onValueChange = { bandQs[i] = it; dsp.setBandQ(i, it); selectedBand = i }, valueRange = 0.3f..8f, colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Accent, inactiveTrackColor = Color.DarkGray))
-                                    Text("FREQ  ${formatFrequency(frequencies[i])}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Slider(value = ln(frequencies[i] / 20f) / ln(1000f), onValueChange = { v -> val hz = 20f * 1000f.pow(v); frequencies[i] = hz; dsp.setBandFrequency(i, hz); selectedBand = i }, valueRange = 0f..1f, colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Accent, inactiveTrackColor = Color.DarkGray))
-                                    Text(String.format(Locale.US, "GAIN  %+.1f dB", gains[i]), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    TextButton(onClick = { selectedBand = i }) { Text(if (selectedBand == i) "SELECTED" else "SELECT", color = Color.White, fontSize = 10.sp) }
+                }
+            }
+            HorizontalPager(state = pagerState, modifier = Modifier.weight(1f).fillMaxWidth()) { page ->
+                when (page) {
+                    0 -> {
+                        Column(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("31-BAND PARAMETRIC EQ", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                Text("${bandCount} BANDS", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Row(Modifier.fillMaxWidth().height(226.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Column(Modifier.width(48.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("PRE", color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    ProDspFader(preamp, -12f, 6f, Modifier.weight(1f).width(42.dp)) { preamp = it; dsp.setPreamp(it) }
+                                    Text(String.format(Locale.US, "%+.1f", preamp), color = Color.White, fontSize = 9.sp)
                                 }
+                                for (i in 0 until bandCount) {
+                                    Column(Modifier.width(62.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("${i + 1}", color = if (selectedBand == i) Color.White else Muted, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                                        Text(formatFrequency(frequencies[i]), color = if (selectedBand == i) Accent else Muted, fontSize = 8.sp)
+                                        ProDspFader(gains[i], -15f, 15f, Modifier.weight(1f).fillMaxWidth()) { gains[i] = it; dsp.setBandGain(i, it); selectedBand = i }
+                                        Text(String.format(Locale.US, "%+.1f", gains[i]), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        Canvas(Modifier.fillMaxWidth().height(3.dp)) { if (selectedBand == i) drawLine(Accent, Offset(0f, size.height/2), Offset(size.width, size.height/2), 2.dp.toPx()) }
+                                    }
+                                }
+                                Column(Modifier.width(42.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                    Text("ADD", color = Muted, fontSize = 9.sp)
+                                    TextButton(onClick = { if (bandCount < 31) { bandCount++; dsp.configureBands(bandCount); frequencies[bandCount - 1] = bandFrequency(bandCount - 1, bandCount) } }) { Text("+", color = Accent, fontSize = 24.sp) }
+                                }
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("SELECTED BAND  ${selectedBand + 1}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("TOUCH / DRAG TO ADJUST", color = Muted, fontSize = 8.sp)
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                                ProDspKnob("GAIN", gains[selectedBand], -15f, 15f, "%+.1f dB") { gains[selectedBand] = it; dsp.setBandGain(selectedBand, it) }
+                                ProDspKnob("FREQ", frequencies[selectedBand], 20f, 20000f, "") { frequencies[selectedBand] = it; dsp.setBandFrequency(selectedBand, it) }
+                                ProDspKnob("Q FACTOR", bandQs[selectedBand], 0.3f, 8f, "%.2f") { bandQs[selectedBand] = it; dsp.setBandQ(selectedBand, it) }
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("FREQUENCY RESPONSE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("LIVE", color = SpectrumGreen, fontSize = 9.sp)
+                            }
+                            FrequencyResponseGraph(frequencies, gains, bandQs, bandCount, dspOn, lowTone, highTone)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("20 Hz", color = Muted, fontSize = 8.sp); Text("1 kHz", color = Muted, fontSize = 8.sp); Text("20 kHz", color = Muted, fontSize = 8.sp)
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("LIVE SPECTRUM", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text(if (playing) "● LIVE" else "STANDBY", color = if (playing) Accent else Muted, fontSize = 8.sp)
+                                }
+                                SpectrumAnalyzer(spectrum, playing)
                             }
                         }
                     }
-                    Column(Modifier.width(58.dp).fillMaxHeight().padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
-                        Text("ADD", color = Muted, fontSize = 10.sp)
-                        Button(onClick = { if (bandCount < 31) { bandCount++; dsp.configureBands(bandCount); frequencies[bandCount - 1] = bandFrequency(bandCount - 1, bandCount) } }) { Text("+") }
+                    1 -> {
+                        Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                            Text("TONE CONTROL", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
+                            Text("SHELF FILTERS", color = Muted, fontSize = 9.sp, letterSpacing = 1.5.sp)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                ProDspKnob("LOW TONE", lowTone, -12f, 12f, "%+.1f dB") { lowTone = it; dsp.setLowToneGain(it) }
+                                ProDspKnob("HIGH TONE", highTone, -12f, 12f, "%+.1f dB") { highTone = it; dsp.setHighToneGain(it) }
+                            }
+                            Divider(color = Color(0xFF252B30))
+                            Text("DEVICE EFFECTS", color = Muted, fontSize = 9.sp, letterSpacing = 1.5.sp)
+                            ValueSlider("Bass enhancement", bass, { bass = it; deviceEffects.setBassStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
+                            ValueSlider("Stereo width", width, { width = it; deviceEffects.setVirtualizerStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
+                            Text("Device effects depend on the Android audio implementation.", color = Muted, fontSize = 10.sp)
+                        }
                     }
-                }
-            }
-            item {
-                Column(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("FREQUENCY RESPONSE", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text("LIVE", color = SpectrumGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    2 -> {
+                        Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("DYNAMICS PROCESSOR", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Compressor", color = Color.White, fontSize = 13.sp)
+                                Switch(checked = compressorOn, onCheckedChange = { compressorOn = it; dsp.setCompressorEnabled(it) })
+                            }
+                            ValueSlider("Threshold", compressorThreshold, { compressorThreshold = it; dsp.setCompressorThreshold(it) }, -36f..0f, "%+.1f dB")
+                            ValueSlider("Ratio", compressorRatio, { compressorRatio = it; dsp.setCompressorRatio(it) }, 1f..20f, "%.1f:1")
+                            ValueSlider("Attack", compressorAttack, { compressorAttack = it; dsp.setCompressorAttack(it) }, 1f..100f, "%.0f ms")
+                            ValueSlider("Release", compressorRelease, { compressorRelease = it; dsp.setCompressorRelease(it) }, 10f..1000f, "%.0f ms")
+                            ValueSlider("Makeup gain", compressorMakeup, { compressorMakeup = it; dsp.setCompressorMakeup(it) }, 0f..12f, "%+.1f dB")
+                            Divider(color = Color(0xFF252B30))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("OUTPUT LIMITER", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Switch(checked = limiterOn, onCheckedChange = { limiterOn = it; dsp.setLimiterEnabled(it) })
+                            }
+                            ValueSlider("Ceiling", limiterCeiling, { limiterCeiling = it; dsp.setLimiterCeiling(it) }, -12f..0f, "%+.1f dBFS")
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Peak guard", color = Color.White, fontSize = 12.sp)
+                                Switch(checked = peakGuard, onCheckedChange = { peakGuard = it; dsp.setPeakGuard(it) })
+                            }
+                        }
                     }
-                    FrequencyResponseGraph(frequencies, gains, bandQs, bandCount, dspOn, lowTone, highTone)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("20 Hz", color = Muted, fontSize = 9.sp)
-                        Text("1 kHz", color = Muted, fontSize = 9.sp)
-                        Text("20 kHz", color = Muted, fontSize = 9.sp)
-                    }
-                }
-            }
-            item {
-                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("SPECTRUM ANALYZER", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text(if (playing) "LIVE" else "WAITING", color = SpectrumGreen, fontSize = 10.sp)
-                    }
-                    SpectrumAnalyzer(spectrum, playing)
-                }
-            }
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("PRESET", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        listOf("Flat", "Bass", "Vocal", "Treble", "Rock").forEach { name ->
-                            TextButton(onClick = { applyPreset(name) }, contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp)) { Text(name, color = Color.White, fontSize = 10.sp) }
+                    else -> {
+                        Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("PRESETS & PLAYER", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
+                            Text("QUICK PRESETS", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("Flat", "Bass", "Vocal", "Treble", "Rock").forEach { name -> OutlinedButton(onClick = { applyPreset(name) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) { Text(name, fontSize = 10.sp) } }
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("CUSTOM PRESETS", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
+                                TextButton(onClick = { showSaveDialog = true }) { Text("+ SAVE", color = Accent) }
+                            }
+                            savedPresets.forEach { name -> TextButton(onClick = { loadPreset(name) }, modifier = Modifier.fillMaxWidth()) { Text(name, color = Color.White) } }
+                            Divider(color = Color(0xFF252B30))
+                            Text("LOCAL PLAYER", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
+                            Text(trackName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text(status, color = Muted, fontSize = 10.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Button(onClick = { picker.launch(arrayOf("audio/*")) }) { Text("CHOOSE AUDIO") }
+                                OutlinedButton(onClick = { if (playing) player.pause() else if (player.mediaItemCount > 0) player.play() }, enabled = player.mediaItemCount > 0) { Text(if (playing) "PAUSE" else "PLAY") }
+                            }
+                            OutlinedButton(onClick = { for (i in 0 until 31) gains[i] = 0f; syncGains() }) { Text("RESET EQUALIZER") }
+                            Text("Processing is currently applied to this app's local player, not system-wide audio.", color = Muted, fontSize = 10.sp)
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = { showSaveDialog = true }) { Text("Save") }
-                    savedPresets.take(4).forEach { name -> TextButton(onClick = { loadPreset(name) }) { Text(name, color = Muted, fontSize = 10.sp) } }
-                    Button(onClick = { picker.launch(arrayOf("audio/*")) }) { Text("Choose audio") }
-                }
-                Text(trackName, color = Color.White, fontSize = 12.sp)
-                Text(status, color = Muted, fontSize = 10.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { if (playing) player.pause() else if (player.mediaItemCount > 0) player.play() }, enabled = player.mediaItemCount > 0) { Text(if (playing) "Pause" else "Play") }
-                    TextButton(onClick = { for (i in 0 until 31) gains[i] = 0f; syncGains() }) { Text("Reset EQ", color = Color.White) }
-                }
             }
-            item {
-                Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("TONE CONTROL", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    ValueSlider("Bass", lowTone, { lowTone = it; dsp.setLowToneGain(it) }, -12f..12f, "%+.1f dB")
-                    ValueSlider("Treble", highTone, { highTone = it; dsp.setHighToneGain(it) }, -12f..12f, "%+.1f dB")
-                    ValueSlider("Bass boost (device)", bass, { bass = it; deviceEffects.setBassStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
-                    ValueSlider("Stereo width", width, { width = it; deviceEffects.setVirtualizerStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
-                }
-            }
-            item {
-                Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("DYNAMICS / LIMITER", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Compressor", color = Color.White)
-                        Switch(checked = compressorOn, onCheckedChange = { compressorOn = it; dsp.setCompressorEnabled(it) })
-                    }
-                    ValueSlider("Attack", compressorAttack, { compressorAttack = it; dsp.setCompressorAttack(it) }, 1f..100f, "%.0f ms")
-                    ValueSlider("Release", compressorRelease, { compressorRelease = it; dsp.setCompressorRelease(it) }, 10f..1000f, "%.0f ms")
-                    ValueSlider("Ratio", compressorRatio, { compressorRatio = it; dsp.setCompressorRatio(it) }, 1f..20f, "%.1f:1")
-                    ValueSlider("Threshold", compressorThreshold, { compressorThreshold = it; dsp.setCompressorThreshold(it) }, -36f..0f, "%+.1f dB")
-                    ValueSlider("Makeup gain", compressorMakeup, { compressorMakeup = it; dsp.setCompressorMakeup(it) }, 0f..12f, "%+.1f dB")
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Output limiter", color = Color.White)
-                        Switch(checked = limiterOn, onCheckedChange = { limiterOn = it; dsp.setLimiterEnabled(it) })
-                    }
-                    ValueSlider("Limiter ceiling", limiterCeiling, { limiterCeiling = it; dsp.setLimiterCeiling(it) }, -12f..0f, "%+.1f dBFS")
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Peak guard", color = Color.White)
-                        Switch(checked = peakGuard, onCheckedChange = { peakGuard = it; dsp.setPeakGuard(it) })
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
+                listOf("EQ", "TONE", "DYN", "LIB").forEachIndexed { index, label ->
+                    TextButton(onClick = { pagerState.requestPage(index) }) {
+                        Text(label, color = if (pagerState.currentPage == index) Accent else Muted, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
                     }
                 }
-            }
-            item {
-                Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("PLAYBACK / SETTINGS", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("Current playback: this app's local player. System-wide processing of YouTube Music or other apps is not yet supported.", color = Muted, fontSize = 11.sp)
-                    Text("31-band parametric DSP · tone shelves · compressor · limiter · FFT spectrum", color = Muted, fontSize = 11.sp)
-                }
-                Spacer(Modifier.height(24.dp))
             }
         }
         if (showSaveDialog) {
-            AlertDialog(
-                onDismissRequest = { showSaveDialog = false },
-                title = { Text("Save custom preset") },
-                text = {
-                    OutlinedTextField(
-                        value = presetName,
-                        onValueChange = { presetName = it.take(24) },
-                        label = { Text("Preset name") },
-                        singleLine = true
-                    )
-                },
+            AlertDialog(onDismissRequest = { showSaveDialog = false }, title = { Text("Save custom preset") },
+                text = { OutlinedTextField(value = presetName, onValueChange = { presetName = it.take(24) }, label = { Text("Preset name") }, singleLine = true) },
                 confirmButton = { TextButton(onClick = { savePreset(presetName) }, enabled = presetName.isNotBlank()) { Text("Save") } },
-                dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") } }
-            )
+                dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") } })
         }
+    }
+}
+
+
+@Composable
+private fun ProDspFader(value: Float, min: Float, max: Float, modifier: Modifier = Modifier, onValue: (Float) -> Unit) {
+    var heightPx by remember { mutableFloatStateOf(1f) }
+    Canvas(modifier.pointerInput(min, max, heightPx) {
+        detectDragGestures(onDragStart = { point ->
+            val fraction = (1f - point.y / heightPx).coerceIn(0f, 1f)
+            onValue(min + fraction * (max - min))
+        }, onDrag = { change, _ ->
+            val fraction = (1f - change.position.y / heightPx).coerceIn(0f, 1f)
+            onValue(min + fraction * (max - min))
+        })
+    }) {
+        heightPx = size.height
+        val centerX = size.width / 2f
+        val top = 8.dp.toPx()
+        val bottom = size.height - 8.dp.toPx()
+        val zeroY = bottom - ((0f - min) / (max - min)) * (bottom - top)
+        val y = bottom - ((value - min) / (max - min)) * (bottom - top)
+        drawLine(Color(0xFF343A40), Offset(centerX, top), Offset(centerX, bottom), 3.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(Accent.copy(alpha = 0.18f), Offset(centerX, zeroY), Offset(centerX, y), 10.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(Accent, Offset(centerX, zeroY), Offset(centerX, y), 3.dp.toPx(), cap = StrokeCap.Round)
+        drawCircle(Color.White, 7.dp.toPx(), Offset(centerX, y))
+        drawCircle(Accent, 3.dp.toPx(), Offset(centerX, y))
+        drawLine(Color(0xFF69737C), Offset(centerX - 8.dp.toPx(), zeroY), Offset(centerX + 8.dp.toPx(), zeroY), 1.dp.toPx())
+    }
+}
+
+@Composable
+private fun ProDspKnob(label: String, value: Float, min: Float, max: Float, format: String, onValue: (Float) -> Unit) {
+    val display = if (label == "FREQ") formatFrequency(value) else String.format(Locale.US, format, value)
+    var dragStartValue by remember(label) { mutableFloatStateOf(value) }
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(94.dp)) {
+        Text(label, color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Canvas(Modifier.size(66.dp).pointerInput(label, min, max, value) {
+            detectDragGestures(onDragStart = { dragStartValue = value }, onDrag = { change, amount ->
+                dragStartValue = (dragStartValue - amount.y * (max - min) / 260f).coerceIn(min, max)
+                onValue(dragStartValue)
+            })
+        }) {
+            val stroke = 5.dp.toPx()
+            val radius = size.minDimension / 2f - stroke
+            val sweep = ((value - min) / (max - min)).coerceIn(0f, 1f) * 270f
+            drawArc(Color(0xFF30363C), 135f, 270f, false, style = Stroke(stroke, cap = StrokeCap.Round))
+            drawArc(Accent, 135f, sweep, false, style = Stroke(stroke, cap = StrokeCap.Round))
+            drawCircle(Color(0xFF171B20), radius - 4.dp.toPx())
+            val angle = Math.toRadians((135f + sweep).toDouble())
+            val dot = Offset(size.width / 2f + kotlin.math.cos(angle).toFloat() * radius, size.height / 2f + kotlin.math.sin(angle).toFloat() * radius)
+            drawCircle(Accent.copy(alpha = 0.25f), 8.dp.toPx(), dot)
+            drawCircle(Color.White, 3.dp.toPx(), dot)
+        }
+        Text(display, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
     }
 }
 
