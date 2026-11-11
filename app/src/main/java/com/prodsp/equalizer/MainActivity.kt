@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.media3.common.AudioListener
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -104,8 +105,7 @@ private fun ProDspScreen() {
     }
 
     DisposableEffect(player) {
-        val listener = object : Player.Listener {
-            @OptIn(androidx.media3.common.util.UnstableApi::class)
+        val audioListener = object : AudioListener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 val nativeBands = engine.attach(audioSessionId)
                 bands.clear()
@@ -125,6 +125,8 @@ private fun ProDspScreen() {
                 }
             }
 
+        }
+        val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 playing = isPlaying
                 if (isPlaying) status = if (engine.isAvailable) "Playing · DSP active" else "Playing · device EQ unavailable"
@@ -147,7 +149,9 @@ private fun ProDspScreen() {
             }
         }
         player.addListener(listener)
+        player.addAudioListener(audioListener)
         onDispose {
+            player.removeAudioListener(audioListener)
             player.removeListener(listener)
             player.release()
             engine.release()
