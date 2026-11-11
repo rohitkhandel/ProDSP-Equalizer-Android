@@ -89,6 +89,7 @@ private fun ProDspScreen() {
     var limiterOn by remember { mutableStateOf(true) }
     var limiterCeiling by remember { mutableFloatStateOf(-1f) }
     var bandCount by remember { mutableIntStateOf(10) }
+    var parametricMode by remember { mutableStateOf(false) }
     var selectedBand by remember { mutableIntStateOf(0) }
     val frequencies = remember { mutableStateListOf<Float>().apply {
         val initialLayout = EqBandLayout.frequencies(10)
@@ -204,11 +205,29 @@ private fun ProDspScreen() {
         selectedBand = selectedBand.coerceIn(0, safeCount - 1)
     }
 
+    fun setParametricMode(enabled: Boolean) {
+        parametricMode = enabled
+        if (!enabled) {
+            // Graphic mode uses evenly spaced logarithmic centres and peak
+            // filters. Parametric values remain available after switching back.
+            val graphicFrequencies = EqBandLayout.frequencies(bandCount)
+            for (index in 0 until bandCount) {
+                frequencies[index] = graphicFrequencies[index]
+                bandQs[index] = 1f
+                bandTypes[index] = BiquadFilterType.PEAK
+                dsp.setBandFrequency(index, frequencies[index])
+                dsp.setBandQ(index, bandQs[index])
+                dsp.setBandType(index, BiquadFilterType.PEAK)
+            }
+        }
+    }
+
     fun savePreset(nameInput: String) {
         val name = nameInput.trim().take(24)
         if (name.isBlank()) return
         val data = JSONObject()
             .put("bandCount", bandCount)
+            .put("parametricMode", parametricMode)
             .put("gains", JSONArray(gains.toList()))
             .put("frequencies", JSONArray(frequencies.toList()))
             .put("qs", JSONArray(bandQs.toList()))
@@ -238,6 +257,7 @@ private fun ProDspScreen() {
         try {
             val data = JSONObject(raw)
             bandCount = data.optInt("bandCount", 10).coerceIn(1, 31)
+            parametricMode = data.optBoolean("parametricMode", false)
             dsp.configureBands(bandCount)
             val savedGains = data.optJSONArray("gains") ?: JSONArray()
             val savedFrequencies = data.optJSONArray("frequencies") ?: JSONArray()
@@ -348,6 +368,25 @@ private fun ProDspScreen() {
                                     }
                                 }
                             }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("EDITOR", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    FilterChip(
+                                        selected = !parametricMode,
+                                        onClick = { setParametricMode(false) },
+                                        label = { Text("GRAPHIC", fontSize = 9.sp) },
+                                        modifier = Modifier.height(29.dp),
+                                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)
+                                    )
+                                    FilterChip(
+                                        selected = parametricMode,
+                                        onClick = { setParametricMode(true) },
+                                        label = { Text("PARAMETRIC", fontSize = 9.sp) },
+                                        modifier = Modifier.height(29.dp),
+                                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)
+                                    )
+                                }
+                            }
                             Row(Modifier.fillMaxWidth().height(226.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                 Column(Modifier.width(48.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text("PRE", color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
@@ -367,27 +406,31 @@ private fun ProDspScreen() {
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text("BAND ${selectedBand + 1}  ·  ${formatFrequency(frequencies[selectedBand])}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Box {
-                                    TextButton(onClick = { showFilterMenu = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                                        Text(bandTypes[selectedBand].title.uppercase(Locale.US), color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                        Text(" ▾", color = Accent, fontSize = 9.sp)
-                                    }
-                                    DropdownMenu(expanded = showFilterMenu, onDismissRequest = { showFilterMenu = false }) {
-                                        BiquadFilterType.entries.forEach { type ->
-                                            DropdownMenuItem(
-                                                text = { Text(type.title) },
-                                                onClick = {
-                                                    bandTypes[selectedBand] = type
-                                                    dsp.setBandType(selectedBand, type)
-                                                    showFilterMenu = false
-                                                }
-                                            )
+                                if (parametricMode) {
+                                    Box {
+                                        TextButton(onClick = { showFilterMenu = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                                            Text(bandTypes[selectedBand].title.uppercase(Locale.US), color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                            Text(" ▾", color = Accent, fontSize = 9.sp)
+                                        }
+                                        DropdownMenu(expanded = showFilterMenu, onDismissRequest = { showFilterMenu = false }) {
+                                            BiquadFilterType.entries.forEach { type ->
+                                                DropdownMenuItem(
+                                                    text = { Text(type.title) },
+                                                    onClick = {
+                                                        bandTypes[selectedBand] = type
+                                                        dsp.setBandType(selectedBand, type)
+                                                        showFilterMenu = false
+                                                    }
+                                                )
+                                            }
                                         }
                                     }
+                                } else {
+                                    Text("GRAPHIC BAND", color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                                if (bandTypes[selectedBand] in setOf(BiquadFilterType.PEAK, BiquadFilterType.LOW_SHELF, BiquadFilterType.HIGH_SHELF)) {
+                                if (bandTypes[selectedBand] in setOf(BiquadFilterType.PEAK, BiquadFilterType.LOW_SHELF, BiquadFilterType.HIGH_SHELF) || !parametricMode) {
                                     ProDspKnob("GAIN", gains[selectedBand], -15f, 15f, "%+.1f dB") { gains[selectedBand] = it; dsp.setBandGain(selectedBand, it) }
                                 } else {
                                     Column(Modifier.width(94.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -395,8 +438,16 @@ private fun ProDspScreen() {
                                         Text("Not used", color = Muted, fontSize = 10.sp)
                                     }
                                 }
-                                ProDspKnob("FREQ", frequencies[selectedBand], 20f, 20000f, "") { frequencies[selectedBand] = it; dsp.setBandFrequency(selectedBand, it) }
-                                ProDspKnob("Q FACTOR", bandQs[selectedBand], 0.3f, 8f, "%.2f") { bandQs[selectedBand] = it; dsp.setBandQ(selectedBand, it) }
+                                if (parametricMode) {
+                                    ProDspKnob("FREQ", frequencies[selectedBand], 20f, 20000f, "") { frequencies[selectedBand] = it; dsp.setBandFrequency(selectedBand, it) }
+                                    ProDspKnob("Q FACTOR", bandQs[selectedBand], 0.3f, 8f, "%.2f") { bandQs[selectedBand] = it; dsp.setBandQ(selectedBand, it) }
+                                } else {
+                                    Column(Modifier.width(190.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("CENTRE FREQUENCY", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                        Text(formatFrequency(frequencies[selectedBand]), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("Fixed logarithmic spacing", color = Muted, fontSize = 8.sp)
+                                    }
+                                }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("FREQUENCY RESPONSE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
