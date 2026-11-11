@@ -63,6 +63,8 @@ private fun ProDspScreen() {
     val frequencies = remember { mutableStateListOf<Float>().apply { repeat(31) { add(bandFrequency(it, 31)) } } }
     val bandQs = remember { mutableStateListOf<Float>().apply { repeat(31) { add(1f) } } }
     var preamp by remember { mutableFloatStateOf(0f) }
+    var lowTone by remember { mutableFloatStateOf(0f) }
+    var highTone by remember { mutableFloatStateOf(0f) }
     var bass by remember { mutableFloatStateOf(0f) }
     var width by remember { mutableFloatStateOf(0f) }
     val gains = remember { mutableStateListOf<Float>().apply { repeat(31) { add(0f) } } }
@@ -128,6 +130,8 @@ private fun ProDspScreen() {
             .put("frequencies", JSONArray(frequencies.toList()))
             .put("qs", JSONArray(bandQs.toList()))
             .put("preamp", preamp)
+            .put("lowTone", lowTone)
+            .put("highTone", highTone)
             .put("peakGuard", peakGuard)
             .put("dspOn", dspOn)
         preferences.edit().putString("preset_$name", data.toString())
@@ -154,6 +158,10 @@ private fun ProDspScreen() {
                 dsp.setBandQ(i, bandQs[i])
             }
             preamp = data.optDouble("preamp", 0.0).toFloat()
+            lowTone = data.optDouble("lowTone", 0.0).toFloat()
+            highTone = data.optDouble("highTone", 0.0).toFloat()
+            dsp.setLowToneGain(lowTone)
+            dsp.setHighToneGain(highTone)
             peakGuard = data.optBoolean("peakGuard", true)
             dspOn = data.optBoolean("dspOn", true)
             dsp.setPreamp(preamp)
@@ -276,13 +284,15 @@ private fun ProDspScreen() {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("MASTER & SPATIAL", color = Color.White, fontWeight = FontWeight.Bold)
                         ValueSlider("Preamp", preamp, { preamp = it; dsp.setPreamp(it) }, -12f..6f, "%+.1f dB")
+                        ValueSlider("Low Tone Gain · 120 Hz shelf", lowTone, { lowTone = it; dsp.setLowToneGain(it) }, -12f..12f, "%+.1f dB")
+                        ValueSlider("High Tone Gain · 8 kHz shelf", highTone, { highTone = it; dsp.setHighToneGain(it) }, -12f..12f, "%+.1f dB")
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("Peak protection", color = Color(0xFFDCE3E8), fontSize = 13.sp)
                             Switch(checked = peakGuard, onCheckedChange = { peakGuard = it; dsp.setPeakGuard(it) })
                         }
                         ValueSlider("Bass boost (device)", bass, { bass = it; deviceEffects.setBassStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
                         ValueSlider("Stereo virtualizer (device)", width, { width = it; deviceEffects.setVirtualizerStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
-                        Text("The custom EQ, Q and preamp process this player's PCM audio. Bass boost and virtualizer use optional Android device effects.", color = Muted, fontSize = 11.sp)
+                        Text("EQ, per-band Q/frequency, low/high shelves and preamp run in the custom PCM chain. Bass boost and virtualizer use optional Android device effects.", color = Muted, fontSize = 11.sp)
                     }
                 }
             }
