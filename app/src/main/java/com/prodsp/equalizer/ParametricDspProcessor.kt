@@ -45,6 +45,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Volatile private var compressorMakeupDb = 0f
     @Volatile private var limiterEnabled = true
     @Volatile private var limiterCeilingDb = -1f
+    @Volatile private var stereoWidth = 1f
 
     private var compressorEnvelope = 0f
     private var compressorGain = 1f
@@ -137,6 +138,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     fun setCompressorMakeup(valueDb: Float) { compressorMakeupDb = valueDb.coerceIn(0f, 12f) }
     fun setLimiterEnabled(value: Boolean) { limiterEnabled = value }
     fun setLimiterCeiling(valueDb: Float) { limiterCeilingDb = valueDb.coerceIn(-12f, 0f) }
+    fun setStereoWidth(percent: Float) { stereoWidth = percent.coerceIn(0f, 200f) / 100f }
     @Synchronized fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), centerFrequencies.copyOf(), qValues.copyOf(), bandTypes.copyOf(), preampDb, enabled, peakGuard)
 
     fun spectrumSnapshot(): FloatArray = spectrumBands.copyOf()
@@ -265,6 +267,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val releaseCoeff = if (sampleRate > 0) exp(-1f / (releaseSeconds * sampleRate)) else 0f
         val makeup = 10.0.pow((compressorMakeupDb / 20.0).toDouble()).toFloat()
         val ceiling = 10.0.pow((limiterCeilingDb / 20.0).toDouble()).toFloat()
+        val width = stereoWidth
         val frame = frameScratch
 
         while (input.remaining() >= 2 * channelCount) {
@@ -284,8 +287,17 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 wetSample *= gain
                 val sample = drySample + (wetSample - drySample) * enabledMix
                 frame[channel] = sample
-                framePeak = maxOf(framePeak, abs(sample))
             }
+
+            // Mid/Side stereo width. 100% is transparent, 0% folds to mono,
+            // and values above 100% increase the side component.
+            if (channelCount == 2 && width != 1f) {
+                val mid = (frame[0] + frame[1]) * 0.5f
+                val side = (frame[0] - frame[1]) * 0.5f * width
+                frame[0] = mid + side
+                frame[1] = mid - side
+            }
+            for (channel in 0 until channelCount) framePeak = maxOf(framePeak, abs(frame[channel]))
 
             if (useCompressor) {
                 val detectorCoeff = if (framePeak > compressorEnvelope) attackCoeff else releaseCoeff
