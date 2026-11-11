@@ -444,10 +444,11 @@ private fun ProDspFader(value: Float, min: Float, max: Float, modifier: Modifier
 private fun ProDspKnob(label: String, value: Float, min: Float, max: Float, format: String, onValue: (Float) -> Unit) {
     val display = if (label == "FREQ") formatFrequency(value) else String.format(Locale.US, format, value)
     var dragStartValue by remember(label) { mutableFloatStateOf(value) }
+    val latestValue by rememberUpdatedState(value)
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(94.dp)) {
         Text(label, color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        Canvas(Modifier.size(66.dp).pointerInput(label, min, max, value) {
-            detectDragGestures(onDragStart = { dragStartValue = value }, onDrag = { change, amount ->
+        Canvas(Modifier.size(66.dp).pointerInput(label, min, max) {
+            detectDragGestures(onDragStart = { dragStartValue = latestValue }, onDrag = { change, amount ->
                 dragStartValue = (dragStartValue - amount.y * (max - min) / 260f).coerceIn(min, max)
                 onValue(dragStartValue)
             })
