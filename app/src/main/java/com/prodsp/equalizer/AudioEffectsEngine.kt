@@ -11,6 +11,10 @@ class AudioEffectsEngine {
     @Volatile private var bassStrength = 0
     @Volatile private var virtualizerStrength = 0
 
+    data class Snapshot(val enabled: Boolean, val bassStrength: Int, val virtualizerStrength: Int)
+
+    fun snapshot() = Snapshot(effectsEnabled, bassStrength, virtualizerStrength)
+
     fun attach(audioSessionId: Int) {
         release()
         if (audioSessionId <= 0) return
