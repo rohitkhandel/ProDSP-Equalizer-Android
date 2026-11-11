@@ -113,6 +113,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         // count changes. The UI explicitly supplies the new layout.
         bandCount = count.coerceIn(1, 31)
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     @Synchronized fun setBandGain(index: Int, gainDb: Float) {
@@ -121,6 +122,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         copy[index] = gainDb.coerceIn(-15f, 15f)
         gainsDb = copy
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     @Synchronized fun setAllGains(values: FloatArray) {
@@ -128,6 +130,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         for (i in 0 until minOf(values.size, 31)) copy[i] = values[i].coerceIn(-15f, 15f)
         gainsDb = copy
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     @Synchronized fun setBandFrequency(index: Int, frequencyHz: Float) {
@@ -136,6 +139,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         copy[index] = frequencyHz.coerceIn(20f, minOf(20_000f, sampleRate.takeIf { it > 0 }?.times(0.475f) ?: 20_000f))
         centerFrequencies = copy
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     @Synchronized fun setBandQ(index: Int, value: Float) {
@@ -144,6 +148,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         copy[index] = value.coerceIn(0.3f, 8f)
         qValues = copy
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     @Synchronized fun setBandType(index: Int, type: BiquadFilterType) {
@@ -152,6 +157,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         copy[index] = type
         bandTypes = copy
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     @Synchronized fun setBandEnabled(index: Int, isEnabled: Boolean) {
@@ -160,37 +166,44 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         copy[index] = isEnabled
         bandEnabled = copy
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     @Synchronized fun setSoloBand(index: Int) {
         soloBandIndex = if (index in 0 until bandCount) index else -1
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     @Synchronized fun setLowToneGain(valueDb: Float) {
         lowToneDb = valueDb.coerceIn(-12f, 12f)
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     @Synchronized fun setHighToneGain(valueDb: Float) {
         highToneDb = valueDb.coerceIn(-12f, 12f)
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     @Synchronized fun setLowToneFrequency(valueHz: Float) {
         lowToneFrequencyHz = valueHz.coerceIn(30f, 800f)
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     @Synchronized fun setHighToneFrequency(valueHz: Float) {
         highToneFrequencyHz = valueHz.coerceIn(1_000f, 18_000f)
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     fun setPreamp(valueDb: Float) { preampDb = valueDb.coerceIn(-12f, 6f); ProDspAudioEngine.notifySettingsChanged() }
     @Synchronized fun setAutoHeadroom(enabled: Boolean) {
         autoHeadroomEnabled = enabled
         updateTargets()
+        ProDspAudioEngine.notifySettingsChanged()
     }
     fun currentAutoHeadroomDb(): Float = automaticHeadroomDb
     fun setEnabled(value: Boolean) { enabled = value; ProDspAudioEngine.notifySettingsChanged() }
