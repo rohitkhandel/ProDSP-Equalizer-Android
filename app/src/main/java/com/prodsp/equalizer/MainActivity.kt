@@ -736,20 +736,27 @@ private fun ProDspScreen() {
                                 Text(formatDuration(currentPositionMs), color = Muted, fontSize = 9.sp)
                                 Text(formatDuration(durationMs), color = Muted, fontSize = 9.sp)
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                                 OutlinedButton(
                                     onClick = { if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0L) },
                                     enabled = player.mediaItemCount > 0
                                 ) { Text("PREV", fontSize = 9.sp) }
+                                Spacer(Modifier.width(8.dp))
                                 Button(
                                     onClick = { if (playing) player.pause() else if (player.mediaItemCount > 0) player.play() },
                                     enabled = player.mediaItemCount > 0
                                 ) { Text(if (playing) "PAUSE" else "PLAY") }
+                                Spacer(Modifier.width(8.dp))
                                 OutlinedButton(
                                     onClick = { player.seekToNextMediaItem() },
                                     enabled = player.hasNextMediaItem()
                                 ) { Text("NEXT", fontSize = 9.sp) }
-                                Spacer(Modifier.weight(1f))
+                            }
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 TextButton(onClick = { player.shuffleModeEnabled = !shuffleEnabled }) {
                                     Text(if (shuffleEnabled) "SHUFFLE ON" else "SHUFFLE", color = if (shuffleEnabled) Accent else Muted, fontSize = 8.sp)
                                 }
