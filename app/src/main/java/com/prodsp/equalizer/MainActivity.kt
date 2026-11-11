@@ -47,7 +47,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.MoreExecutors
+import java.util.concurrent.Executor
 import java.util.Locale
 import kotlin.math.exp
 import kotlin.math.cos
@@ -163,7 +163,7 @@ private fun ProDspScreen() {
                 connectionFailed = true
             }
         }
-        controllerFuture.addListener(listener, MoreExecutors.directExecutor())
+        controllerFuture.addListener(listener, Executor { command -> command.run() })
         onDispose { MediaController.releaseFuture(controllerFuture) }
     }
 
