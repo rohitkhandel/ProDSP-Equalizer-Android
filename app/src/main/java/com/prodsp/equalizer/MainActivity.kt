@@ -118,6 +118,7 @@ private fun ProDspScreen() {
     var compressorMakeup by remember { mutableFloatStateOf(0f) }
     var limiterOn by remember { mutableStateOf(true) }
     var limiterCeiling by remember { mutableFloatStateOf(-1f) }
+    var limiterRelease by remember { mutableFloatStateOf(80f) }
     var bandCount by remember { mutableIntStateOf(10) }
     var parametricMode by remember { mutableStateOf(false) }
     var parametricBackup by remember { mutableStateOf<ParametricBackup?>(null) }
@@ -443,6 +444,7 @@ private fun ProDspScreen() {
             .put("compressorMakeup", compressorMakeup)
             .put("limiterOn", limiterOn)
             .put("limiterCeiling", limiterCeiling)
+            .put("limiterRelease", limiterRelease)
             .put("dspOn", dspOn)
         preferences.edit().putString("preset_$name", data.toString())
             .putStringSet("names", (savedPresets.toSet() + name)).apply()
@@ -505,6 +507,7 @@ private fun ProDspScreen() {
             compressorMakeup = data.optDouble("compressorMakeup", 0.0).toFloat()
             limiterOn = data.optBoolean("limiterOn", true)
             limiterCeiling = data.optDouble("limiterCeiling", -1.0).toFloat()
+            limiterRelease = data.optDouble("limiterRelease", 80.0).toFloat().coerceIn(10f, 500f)
             dsp.setCompressorEnabled(compressorOn)
             dsp.setCompressorThreshold(compressorThreshold)
             dsp.setCompressorRatio(compressorRatio)
@@ -513,6 +516,7 @@ private fun ProDspScreen() {
             dsp.setCompressorMakeup(compressorMakeup)
             dsp.setLimiterEnabled(limiterOn)
             dsp.setLimiterCeiling(limiterCeiling)
+            dsp.setLimiterRelease(limiterRelease)
             dspOn = data.optBoolean("dspOn", true)
             dsp.setPreamp(preamp)
             dsp.setPeakGuard(peakGuard)
@@ -850,6 +854,8 @@ private fun ProDspScreen() {
                                 Switch(checked = limiterOn, onCheckedChange = { limiterOn = it; dsp.setLimiterEnabled(it) })
                             }
                             ValueSlider("Ceiling", limiterCeiling, { limiterCeiling = it; dsp.setLimiterCeiling(it) }, -12f..0f, "%+.1f dBFS")
+                            ValueSlider("Limiter release", limiterRelease, { limiterRelease = it; dsp.setLimiterRelease(it) }, 10f..500f, "%.0f ms")
+                            Text("Stereo-linked peak control · instant attack · smooth release", color = Muted, fontSize = 10.sp)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text("Peak guard", color = Color.White, fontSize = 12.sp)
                                 Switch(checked = peakGuard, onCheckedChange = { peakGuard = it; dsp.setPeakGuard(it) })
