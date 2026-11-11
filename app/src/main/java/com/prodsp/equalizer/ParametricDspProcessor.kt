@@ -1,0 +1,211 @@
+package com.prodsp.equalizer
+
+import androidx.media3.common.C
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.BaseAudioProcessor
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.ln
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+/**
+ * Real PCM parametric equalizer for ProDSP's Media3 playback path.
+ * 31 logarithmically spaced peaking filters, per-channel state, coefficient
+ * smoothing, preamp and a final peak guard. Processing stays on the audio thread.
+ */
+class ParametricDspProcessor : BaseAudioProcessor() {
+    companion object {
+        private const val MIN_HZ = 20f
+        private const val MAX_HZ = 20_000f
+        private const val TRANSITION_SAMPLES = 960 // 20 ms at 48 kHz
+        private val BAND_COUNTS = intArrayOf(10, 15, 20, 31)
+    }
+
+    @Volatile private var bandCount = 10
+    @Volatile private var gainsDb = FloatArray(31)
+    @Volatile private var qValue = 1.0f
+    @Volatile private var preampDb = 0f
+    @Volatile private var enabled = true
+    @Volatile private var peakGuard = true
+
+    private var sampleRate = 0
+    private var channelCount = 0
+    private var filters = emptyArray<Filter>()
+    private var transitionRemaining = 0
+
+    data class Snapshot(val bandCount: Int, val gainsDb: FloatArray, val q: Float, val preampDb: Float, val enabled: Boolean, val peakGuard: Boolean)
+
+    @Synchronized fun configureBands(count: Int) {
+        bandCount = BAND_COUNTS.minBy { abs(it - count) }
+        gainsDb = gainsDb.copyOf()
+    }
+
+    @Synchronized fun setBandGain(index: Int, gainDb: Float) {
+        if (index !in 0 until bandCount) return
+        val copy = gainsDb.copyOf()
+        copy[index] = gainDb.coerceIn(-15f, 15f)
+        gainsDb = copy
+        updateTargets()
+    }
+
+    @Synchronized fun setAllGains(values: FloatArray) {
+        val copy = FloatArray(31)
+        for (i in 0 until minOf(values.size, 31)) copy[i] = values[i].coerceIn(-15f, 15f)
+        gainsDb = copy
+        updateTargets()
+    }
+
+    @Synchronized fun setQ(value: Float) {
+        qValue = value.coerceIn(0.3f, 4f)
+        updateTargets()
+    }
+
+    fun setPreamp(valueDb: Float) { preampDb = valueDb.coerceIn(-12f, 6f) }
+    fun setEnabled(value: Boolean) { enabled = value }
+    fun setPeakGuard(value: Boolean) { peakGuard = value }
+    fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), qValue, preampDb, enabled, peakGuard)
+
+    override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT ||
+            inputAudioFormat.channelCount !in 1..2 ||
+            inputAudioFormat.sampleRate <= 0
+        ) {
+            throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
+        }
+        sampleRate = inputAudioFormat.sampleRate
+        channelCount = inputAudioFormat.channelCount
+        filters = Array(31) { Filter(channelCount) }
+        updateTargets()
+        return inputAudioFormat
+    }
+
+    @Synchronized private fun updateTargets() {
+        if (sampleRate <= 0 || filters.isEmpty()) return
+        val count = bandCount
+        val gains = gainsDb.copyOf()
+        val q = qValue
+        for (i in 0 until 31) {
+            val frequency = frequencyFor(i, count)
+            val gain = if (i < count) gains[i] else 0f
+            filters[i].setTarget(peakingCoefficients(sampleRate, frequency, q, gain))
+        }
+        transitionRemaining = TRANSITION_SAMPLES
+    }
+
+    override fun queueInput(inputBuffer: ByteBuffer) {
+        val bytes = inputBuffer.remaining()
+        if (bytes <= 0) return
+        val output = replaceOutputBuffer(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val input = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
+        val active = enabled
+        val gain = 10.0.pow((preampDb / 20.0).toDouble()).toFloat()
+        val protect = peakGuard
+
+        while (input.remaining() >= 2 * channelCount) {
+            for (channel in 0 until channelCount) {
+                val raw = input.short.toInt() / 32768f
+                var sample = raw
+                if (active) {
+                    for (band in 0 until bandCount) {
+                        val filter = filters[band]
+                        filter.advance(transitionRemaining, TRANSITION_SAMPLES)
+                        sample = filter.process(sample, channel)
+                    }
+                    sample *= gain
+                    if (protect) sample = softLimit(sample)
+                }
+                val quantized = (sample.coerceIn(-1f, 0.9999695f) * 32768f).toInt()
+                output.putShort(quantized.toShort())
+            }
+            if (transitionRemaining > 0) transitionRemaining--
+        }
+        inputBuffer.position(input.position())
+        output.flip()
+    }
+
+    private fun frequencyFor(index: Int, count: Int): Float {
+        if (count <= 1) return 1000f
+        return (MIN_HZ * (MAX_HZ / MIN_HZ).pow(index.toFloat() / (count - 1))).coerceIn(20f, sampleRate * 0.475f)
+    }
+
+    private fun peakingCoefficients(rate: Int, frequency: Float, q: Float, gainDb: Float): Coefficients {
+        val f = frequency.coerceIn(10f, rate * 0.475f)
+        val a = 10.0.pow((gainDb / 40.0).toDouble()).toFloat()
+        val w0 = (2.0 * PI * f / rate).toFloat()
+        val alpha = sin(w0) / (2f * q)
+        val c = cos(w0)
+        val a0 = 1f + alpha / a
+        return Coefficients(
+            (1f + alpha * a) / a0,
+            (-2f * c) / a0,
+            (1f - alpha * a) / a0,
+            (-2f * c) / a0,
+            (1f - alpha / a) / a0
+        )
+    }
+
+    private fun softLimit(x: Float): Float {
+        val magnitude = abs(x)
+        if (magnitude <= 0.88f) return x
+        val compressed = 0.88f + 0.12f * (1f - exp(-((magnitude - 0.88f) / 0.12f)))
+        return if (x < 0f) -compressed else compressed
+    }
+
+    override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
+        filters.forEach { it.clearState() }
+        updateTargets()
+    }
+
+    override fun onReset() {
+        sampleRate = 0
+        channelCount = 0
+        filters = emptyArray()
+    }
+
+    private data class Coefficients(val b0: Float, val b1: Float, val b2: Float, val a1: Float, val a2: Float)
+
+    private class Filter(channels: Int) {
+        private var current = Coefficients(1f, 0f, 0f, 0f, 0f)
+        @Volatile private var target = current
+        private val z1 = FloatArray(channels)
+        private val z2 = FloatArray(channels)
+
+        fun setTarget(value: Coefficients) { target = value }
+
+        fun advance(remaining: Int, total: Int) {
+            if (remaining <= 0) {
+                current = target
+                return
+            }
+            val t = 1f / remaining.coerceAtLeast(1)
+            val from = current
+            val to = target
+            current = Coefficients(
+                from.b0 + (to.b0 - from.b0) * t,
+                from.b1 + (to.b1 - from.b1) * t,
+                from.b2 + (to.b2 - from.b2) * t,
+                from.a1 + (to.a1 - from.a1) * t,
+                from.a2 + (to.a2 - from.a2) * t
+            )
+        }
+
+        fun process(input: Float, channel: Int): Float {
+            val c = current
+            val output = c.b0 * input + z1[channel]
+            z1[channel] = c.b1 * input - c.a1 * output + z2[channel]
+            z2[channel] = c.b2 * input - c.a2 * output
+            return output
+        }
+
+        fun clearState() {
+            z1.fill(0f)
+            z2.fill(0f)
+        }
+    }
+}
