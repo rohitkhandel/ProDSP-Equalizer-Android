@@ -25,6 +25,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import java.util.Locale
 import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.sin
 
@@ -56,7 +57,9 @@ private fun ProDspScreen() {
     var dspOn by remember { mutableStateOf(true) }
     var peakGuard by remember { mutableStateOf(true) }
     var bandCount by remember { mutableIntStateOf(10) }
-    var qValue by remember { mutableFloatStateOf(1f) }
+    var selectedBand by remember { mutableIntStateOf(0) }
+    val frequencies = remember { mutableStateListOf<Float>().apply { repeat(31) { add(bandFrequency(it, 31)) } } }
+    val bandQs = remember { mutableStateListOf<Float>().apply { repeat(31) { add(1f) } } }
     var preamp by remember { mutableFloatStateOf(0f) }
     var bass by remember { mutableFloatStateOf(0f) }
     var width by remember { mutableFloatStateOf(0f) }
@@ -154,10 +157,10 @@ private fun ProDspScreen() {
                             Text("PARAMETRIC EQUALIZER", color = Color.White, fontWeight = FontWeight.Bold)
                             Switch(checked = dspOn, onCheckedChange = { dspOn = it; dsp.setEnabled(it) })
                         }
-                        Text("Custom peaking-biquad filter bank. Select the number of bands and tune gain/Q.", color = Muted, fontSize = 12.sp)
+                        Text("Custom peaking-biquad filter bank. Select band count, then edit each band frequency, gain and Q independently.", color = Muted, fontSize = 12.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                             listOf(10, 15, 20, 31).forEach { count ->
-                                Button(onClick = { bandCount = count; dsp.configureBands(count); syncGains() }) {
+                                Button(onClick = { bandCount = count; dsp.configureBands(count); for (i in 0 until 31) { frequencies[i] = bandFrequency(i, count); bandQs[i] = 1f }; syncGains() }) {
                                     Text(if (bandCount == count) "$count ✓" else "$count", fontSize = 11.sp)
                                 }
                             }
@@ -169,15 +172,31 @@ private fun ProDspScreen() {
                                 }
                             }
                         }
-                        ValueSlider("Filter Q", qValue, { qValue = it; dsp.setQ(it) }, 0.3f..4f, "%.2f")
+                        Text("SELECTED BAND  ·  ${selectedBand + 1}", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                        Text("Center frequency and Q are independently adjustable for each band.", color = Muted, fontSize = 11.sp)
+                        val selectedFrequency = frequencies[selectedBand]
+                        val frequencyProgress = (ln(selectedFrequency / 20f) / ln(1000f)).coerceIn(0f, 1f)
+                        ValueSlider("Center frequency", frequencyProgress, { progress ->
+                            val hz = 20f * 1000f.pow(progress)
+                            frequencies[selectedBand] = hz
+                            dsp.setBandFrequency(selectedBand, hz)
+                        }, 0f..1f, "%.0f%%")
+                        Text(formatFrequency(selectedFrequency), color = Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        ValueSlider("Selected band Q", bandQs[selectedBand], { q ->
+                            bandQs[selectedBand] = q
+                            dsp.setBandQ(selectedBand, q)
+                        }, 0.3f..8f, "%.2f")
                         Text("BAND GAIN", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                         for (i in 0 until bandCount) {
                             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(formatFrequency(bandFrequency(i, bandCount)), color = Color(0xFFDCE3E8), fontSize = 12.sp)
+                                    Text(formatFrequency(frequencies[i]), color = if (selectedBand == i) Accent else Color(0xFFDCE3E8), fontSize = 12.sp)
                                     Text(String.format(Locale.US, "%+.1f dB", gains[i]), color = Accent, fontSize = 12.sp)
                                 }
-                                Slider(value = gains[i], onValueChange = { value -> gains[i] = value; dsp.setBandGain(i, value) }, valueRange = -15f..15f)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Slider(modifier = Modifier.weight(1f), value = gains[i], onValueChange = { value -> gains[i] = value; dsp.setBandGain(i, value) }, valueRange = -15f..15f)
+                                    TextButton(onClick = { selectedBand = i }) { Text(if (selectedBand == i) "EDITING" else "EDIT", fontSize = 9.sp) }
+                                }
                             }
                         }
                         Button(onClick = { for (i in 0 until 31) gains[i] = 0f; syncGains() }) { Text("Reset all bands") }
