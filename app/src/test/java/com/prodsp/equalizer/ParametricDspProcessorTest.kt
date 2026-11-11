@@ -66,6 +66,32 @@ class ParametricDspProcessorTest {
     }
 
     @Test
+    fun masterDspBypassReturnsDryPcmEvenWhenProcessingControlsAreSet() {
+        val processor = createProcessor()
+        try {
+            processor.setPreamp(6f)
+            processor.setStereoWidth(0f)
+            processor.setStereoBalance(80f)
+            processor.setEnabled(false)
+            processor.flush()
+
+            val input = ShortArray(2_048) { index ->
+                (3_000.0 * sin(2.0 * PI * index / 83.0)).toInt().toShort()
+            }
+            val output = process(processor, input)
+            assertEquals(input.size, output.size)
+            for (index in input.indices) {
+                assertTrue(
+                    "Bypass changed dry PCM at $index",
+                    kotlin.math.abs(input[index].toInt() - output[index].toInt()) <= 1
+                )
+            }
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
     fun preampSixDbProducesExpectedRmsIncreaseWithoutClipping() {
         val processor = createProcessor()
         try {
