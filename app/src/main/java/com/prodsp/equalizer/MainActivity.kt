@@ -35,6 +35,7 @@ import kotlin.math.pow
 import kotlin.math.sin
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.delay
 
 private val Accent = Color(0xFFB5F36B)
 private val Muted = Color(0xFF9AA4AF)
@@ -60,6 +61,7 @@ private fun ProDspScreen() {
     val deviceEffects = remember { AudioEffectsEngine() }
     var trackName by remember { mutableStateOf("No track selected") }
     var status by remember { mutableStateOf("Choose a music file to start") }
+    var spectrum by remember { mutableStateOf(FloatArray(48)) }
     var playing by remember { mutableStateOf(false) }
     var dspOn by remember { mutableStateOf(true) }
     var peakGuard by remember { mutableStateOf(true) }
@@ -96,6 +98,13 @@ private fun ProDspScreen() {
             player.play()
             trackName = uri.lastPathSegment?.substringAfterLast('/') ?: "Selected audio"
             status = "Loading audio…"
+        }
+    }
+
+    LaunchedEffect(dsp) {
+        while (true) {
+            spectrum = dsp.spectrumSnapshot()
+            delay(33)
         }
     }
 
@@ -252,6 +261,22 @@ private fun ProDspScreen() {
             }
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("LIVE SPECTRUM", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(if (playing) "LIVE · FFT 512" else "WAITING FOR AUDIO", color = if (playing) Accent else Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                        SpectrumAnalyzer(spectrum, playing)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("30 Hz", color = Muted, fontSize = 10.sp)
+                            Text("1 kHz", color = Muted, fontSize = 10.sp)
+                            Text("16 kHz", color = Muted, fontSize = 10.sp)
+                        }
+                    }
+                }
+            }
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("PARAMETRIC EQUALIZER", color = Color.White, fontWeight = FontWeight.Bold)
@@ -376,6 +401,28 @@ private fun ProDspScreen() {
                 },
                 confirmButton = { TextButton(onClick = { savePreset(presetName) }, enabled = presetName.isNotBlank()) { Text("Save") } },
                 dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") } }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpectrumAnalyzer(levels: FloatArray, active: Boolean) {
+    Canvas(Modifier.fillMaxWidth().height(112.dp)) {
+        val count = levels.size.coerceAtLeast(1)
+        val gap = 2.dp.toPx()
+        val barWidth = ((size.width - gap * (count - 1)) / count).coerceAtLeast(1f)
+        val minHeight = 3.dp.toPx()
+        val maxHeight = size.height - 4.dp.toPx()
+        for (i in 0 until count) {
+            val level = if (active) levels.getOrElse(i) { 0f }.coerceIn(0f, 1f) else 0f
+            val height = minHeight + (maxHeight - minHeight) * level
+            val left = i * (barWidth + gap)
+            drawRoundRect(
+                color = if (active) Accent.copy(alpha = 0.45f + 0.55f * level) else Muted.copy(alpha = 0.22f),
+                topLeft = androidx.compose.ui.geometry.Offset(left, size.height - height),
+                size = androidx.compose.ui.geometry.Size(barWidth, height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2f)
             )
         }
     }
