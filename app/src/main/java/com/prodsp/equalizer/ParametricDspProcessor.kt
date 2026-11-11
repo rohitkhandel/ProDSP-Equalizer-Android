@@ -47,6 +47,14 @@ class ParametricDspProcessor : BaseAudioProcessor() {
 
     private var compressorEnvelope = 0f
     private var compressorGain = 1f
+    private val fftSize = 512
+    private val fftReal = FloatArray(fftSize)
+    private val fftImag = FloatArray(fftSize)
+    private val fftWindow = FloatArray(fftSize) { i ->
+        (0.5 - 0.5 * kotlin.math.cos(2.0 * PI * i / (fftSize - 1))).toFloat()
+    }
+    private var fftWriteIndex = 0
+    @Volatile private var spectrumBands = FloatArray(48)
     private var sampleRate = 0
     private var channelCount = 0
     private var filters = emptyArray<Filter>()
@@ -119,6 +127,83 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     fun setLimiterEnabled(value: Boolean) { limiterEnabled = value }
     fun setLimiterCeiling(valueDb: Float) { limiterCeilingDb = valueDb.coerceIn(-12f, 0f) }
     @Synchronized fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), centerFrequencies.copyOf(), qValues.copyOf(), preampDb, enabled, peakGuard)
+
+    fun spectrumSnapshot(): FloatArray = spectrumBands.copyOf()
+
+    private fun pushSpectrumSample(sample: Float) {
+        fftReal[fftWriteIndex] = sample * fftWindow[fftWriteIndex]
+        fftImag[fftWriteIndex] = 0f
+        fftWriteIndex++
+        if (fftWriteIndex < fftSize) return
+        fftWriteIndex = 0
+
+        var j = 0
+        for (i in 1 until fftSize) {
+            var bit = fftSize shr 1
+            while ((j and bit) != 0) {
+                j = j xor bit
+                bit = bit shr 1
+            }
+            j = j xor bit
+            if (i < j) {
+                val real = fftReal[i]
+                fftReal[i] = fftReal[j]
+                fftReal[j] = real
+                val imaginary = fftImag[i]
+                fftImag[i] = fftImag[j]
+                fftImag[j] = imaginary
+            }
+        }
+
+        var size = 2
+        while (size <= fftSize) {
+            val half = size shr 1
+            val angle = (-2.0 * PI / size).toFloat()
+            val stepReal = kotlin.math.cos(angle)
+            val stepImag = kotlin.math.sin(angle)
+            var start = 0
+            while (start < fftSize) {
+                var wr = 1f
+                var wi = 0f
+                for (offset in 0 until half) {
+                    val even = start + offset
+                    val odd = even + half
+                    val tr = wr * fftReal[odd] - wi * fftImag[odd]
+                    val ti = wr * fftImag[odd] + wi * fftReal[odd]
+                    fftReal[odd] = fftReal[even] - tr
+                    fftImag[odd] = fftImag[even] - ti
+                    fftReal[even] += tr
+                    fftImag[even] += ti
+                    val nextWr = wr * stepReal - wi * stepImag
+                    wi = wr * stepImag + wi * stepReal
+                    wr = nextWr
+                }
+                start += size
+            }
+            size = size shl 1
+        }
+
+        val previous = spectrumBands
+        val next = FloatArray(48)
+        val rate = sampleRate.coerceAtLeast(1).toFloat()
+        val nyquist = rate * 0.5f
+        for (band in next.indices) {
+            val lowHz = 30f * (16_000f / 30f).pow(band.toFloat() / next.size)
+            val highHz = 30f * (16_000f / 30f).pow((band + 1f) / next.size)
+            val firstBin = (lowHz * fftSize / rate).toInt().coerceIn(1, fftSize / 2 - 1)
+            val lastBin = (highHz * fftSize / rate).toInt().coerceIn(firstBin + 1, fftSize / 2)
+            var magnitude = 0f
+            for (bin in firstBin until lastBin) {
+                val real = fftReal[bin]
+                val imaginary = fftImag[bin]
+                magnitude = maxOf(magnitude, sqrt(real * real + imaginary * imaginary) * (2f / fftSize))
+            }
+            val db = 20f * kotlin.math.log10(magnitude.coerceAtLeast(1e-5f))
+            val normalized = ((db + 72f) / 72f).coerceIn(0f, 1f)
+            next[band] = maxOf(normalized, previous[band] * 0.72f)
+        }
+        spectrumBands = next
+    }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT ||
@@ -211,6 +296,9 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 val quantized = (sample.coerceIn(-1f, 0.9999695f) * 32768f).toInt()
                 output.putShort(quantized.toShort())
             }
+            var monoSample = 0f
+            for (channel in 0 until channelCount) monoSample += frame[channel] / channelCount
+            pushSpectrumSample(monoSample)
             if (transitionRemaining > 0) transitionRemaining--
         }
         inputBuffer.position(input.position())
@@ -280,6 +368,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     override fun onFlush() {
         compressorEnvelope = 0f
         compressorGain = 1f
+        fftWriteIndex = 0
+        spectrumBands = FloatArray(48)
         filters.forEach { it.clearState() }
         lowShelfFilter?.clearState()
         highShelfFilter?.clearState()
@@ -291,6 +381,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         channelCount = 0
         compressorEnvelope = 0f
         compressorGain = 1f
+        fftWriteIndex = 0
+        spectrumBands = FloatArray(48)
         filters = emptyArray()
         lowShelfFilter = null
         highShelfFilter = null
