@@ -171,6 +171,41 @@ class ParametricDspProcessorTest {
     }
 
     @Test
+    fun stereoLinkedLimiterKeepsBothChannelsBelowTheConfiguredCeiling() {
+        val processor = createProcessor()
+        try {
+            processor.setLimiterEnabled(true)
+            processor.setLimiterCeiling(-3f)
+            processor.setLimiterRelease(80f)
+            processor.flush()
+
+            val frames = 8_192
+            val input = ShortArray(frames * 2)
+            for (frame in 0 until frames) {
+                val sample = (30_000.0 * sin(2.0 * PI * 1_000.0 * frame / 48_000.0))
+                    .toInt().toShort()
+                input[frame * 2] = sample
+                input[frame * 2 + 1] = sample
+            }
+
+            val output = process(processor, input)
+            val outputPeak = output.maxOf { kotlin.math.abs(it.toInt()) }
+            val ceilingSamples = 10.0.pow(-3.0 / 20.0) * 32_768.0
+
+            assertTrue("Limiter did not reduce the signal peak", outputPeak > 20_000)
+            assertTrue(
+                "Limiter exceeded its -3 dBFS ceiling: $outputPeak",
+                outputPeak <= ceilingSamples + 2.0
+            )
+            for (frame in 0 until frames) {
+                assertEquals("Limiter must preserve the stereo image", output[frame * 2], output[frame * 2 + 1])
+            }
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
     fun preampSixDbProducesExpectedRmsIncreaseWithoutClipping() {
         val processor = createProcessor()
         try {
