@@ -121,6 +121,7 @@ private fun ProDspScreen() {
     var parametricMode by remember { mutableStateOf(false) }
     var parametricBackup by remember { mutableStateOf<ParametricBackup?>(null) }
     var selectedBand by remember { mutableIntStateOf(0) }
+    var soloBandIndex by remember { mutableIntStateOf(-1) }
     val frequencies = remember { mutableStateListOf<Float>().apply {
         val initialLayout = EqBandLayout.frequencies(10)
         val expandedLayout = EqBandLayout.frequencies(31)
@@ -339,6 +340,10 @@ private fun ProDspScreen() {
         }
         syncGains()
         selectedBand = selectedBand.coerceIn(0, safeCount - 1)
+        if (soloBandIndex >= safeCount) {
+            soloBandIndex = -1
+            dsp.setSoloBand(-1)
+        }
     }
 
     fun setParametricMode(enabled: Boolean) {
@@ -452,6 +457,8 @@ private fun ProDspScreen() {
             bandCount = data.optInt("bandCount", 10).coerceIn(1, 31)
             parametricMode = data.optBoolean("parametricMode", false)
             parametricBackup = null
+            soloBandIndex = -1
+            dsp.setSoloBand(-1)
             dsp.configureBands(bandCount)
             val savedGains = data.optJSONArray("gains") ?: JSONArray()
             val savedFrequencies = data.optJSONArray("frequencies") ?: JSONArray()
@@ -669,6 +676,20 @@ private fun ProDspScreen() {
                                 }
                                 TextButton(
                                     onClick = {
+                                        soloBandIndex = if (soloBandIndex == selectedBand) -1 else selectedBand
+                                        dsp.setSoloBand(soloBandIndex)
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                ) {
+                                    Text(
+                                        if (soloBandIndex == selectedBand) "UNSOLO" else "SOLO",
+                                        color = if (soloBandIndex == selectedBand) Accent else Muted,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
                                         gains[selectedBand] = 0f
                                         bandQs[selectedBand] = 1f
                                         bandTypes[selectedBand] = BiquadFilterType.PEAK
@@ -725,6 +746,7 @@ private fun ProDspScreen() {
                                 highToneFrequencyHz = highToneFrequency,
                                 sampleRateHz = sampleRateHz,
                                 selectedBand = selectedBand,
+                                soloBandIndex = soloBandIndex,
                                 editableFrequency = parametricMode,
                                 onBandSelected = { selectedBand = it },
                                 onBandChanged = { index, frequency, gain ->
@@ -1056,6 +1078,7 @@ private fun FrequencyResponseGraph(
     highToneFrequencyHz: Float,
     sampleRateHz: Int,
     selectedBand: Int,
+    soloBandIndex: Int,
     editableFrequency: Boolean,
     onBandSelected: (Int) -> Unit,
     onBandChanged: (Int, Float, Float) -> Unit
@@ -1069,7 +1092,7 @@ private fun FrequencyResponseGraph(
     val qValues = qs.take(activeCount)
     val typeValues = types.take(activeCount)
     val curveValues = remember(
-        frequencyValues, gainValues, qValues, typeValues, enabledValues, enabled,
+        frequencyValues, gainValues, qValues, typeValues, enabledValues, enabled, soloBandIndex,
         lowToneDb, highToneDb, lowToneFrequencyHz, highToneFrequencyHz, sampleRateHz
     ) {
         if (!enabled) {
@@ -1077,7 +1100,9 @@ private fun FrequencyResponseGraph(
         } else {
             // Coefficients depend on the band controls, not on each graph
             // sample. Build once per edit, then evaluate the response curve.
-            val bandCoefficients = (0 until activeCount).filter { enabledValues[it] }.map { index ->
+            val bandCoefficients = (0 until activeCount)
+                .filter { enabledValues[it] && (soloBandIndex < 0 || soloBandIndex == it) }
+                .map { index ->
                 BiquadMath.coefficients(
                     sampleRateHz,
                     frequencyValues[index],
@@ -1215,7 +1240,7 @@ private fun FrequencyResponseGraph(
                 )
             ) gainValues[index] else 0f
             val y = yFor(handleGain)
-            if (!enabledValues[index]) {
+            if (!enabledValues[index] || (soloBandIndex >= 0 && soloBandIndex != index)) {
                 drawCircle(
                     color = Muted.copy(alpha = 0.45f),
                     radius = if (index == selectedBand) 5.dp.toPx() else 3.dp.toPx(),
