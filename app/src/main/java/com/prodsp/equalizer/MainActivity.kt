@@ -685,6 +685,46 @@ private fun FrequencyResponseGraph(
     lowToneDb: Float,
     highToneDb: Float
 ) {
+    // Snapshot the EQ controls and cache the curve. The live spectrum updates
+    // frequently; they should not force expensive biquad/trigonometric work.
+    val activeCount = bandCount.coerceAtMost(minOf(frequencies.size, gains.size, qs.size, types.size))
+    val frequencyValues = frequencies.take(activeCount)
+    val gainValues = gains.take(activeCount)
+    val qValues = qs.take(activeCount)
+    val typeValues = types.take(activeCount)
+    val curveValues = remember(
+        frequencyValues, gainValues, qValues, typeValues, enabled, lowToneDb, highToneDb
+    ) {
+        FloatArray(221) { point ->
+            val fraction = point / 220f
+            val hz = 20f * 1000f.pow(fraction)
+            if (!enabled) {
+                0f
+            } else {
+                var totalDb = 0f
+                for (index in 0 until activeCount) {
+                    val coefficients = BiquadMath.coefficients(
+                        48_000,
+                        frequencyValues[index],
+                        qValues[index],
+                        gainValues[index],
+                        typeValues[index]
+                    )
+                    totalDb += BiquadMath.magnitudeDb(coefficients, hz, 48_000)
+                }
+                val lowShelf = BiquadMath.coefficients(
+                    48_000, 120f, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF
+                )
+                val highShelf = BiquadMath.coefficients(
+                    48_000, 8_000f, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF
+                )
+                totalDb += BiquadMath.magnitudeDb(lowShelf, hz, 48_000)
+                totalDb += BiquadMath.magnitudeDb(highShelf, hz, 48_000)
+                totalDb
+            }
+        }
+    }
+
     Canvas(Modifier.fillMaxWidth().height(154.dp)) {
         val left = 8f
         val right = size.width - 8f
@@ -693,40 +733,41 @@ private fun FrequencyResponseGraph(
         val graphWidth = right - left
         val graphHeight = bottom - top
         fun yFor(db: Float): Float = top + ((18f - db.coerceIn(-18f, 18f)) / 36f) * graphHeight
-        drawRoundRect(color = Color(0xFF10161B), size = size, cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()))
+
+        drawRoundRect(
+            color = Color(0xFF10161B),
+            size = size,
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx())
+        )
         listOf(-15f, 0f, 15f).forEach { db ->
             val y = yFor(db)
-            drawLine(Color(0xFF34414A), androidx.compose.ui.geometry.Offset(left, y), androidx.compose.ui.geometry.Offset(right, y), strokeWidth = if (db == 0f) 1.5f else 1f)
+            drawLine(
+                Color(0xFF34414A),
+                androidx.compose.ui.geometry.Offset(left, y),
+                androidx.compose.ui.geometry.Offset(right, y),
+                strokeWidth = if (db == 0f) 1.5f else 1f
+            )
         }
-        listOf(20f, 100f, 1000f, 10_000f, 20_000f).forEach { hz ->
+        listOf(20f, 100f, 1_000f, 10_000f, 20_000f).forEach { hz ->
             val x = left + (ln(hz) - ln(20f)) / ln(1000f) * graphWidth
-            drawLine(Color(0xFF263139), androidx.compose.ui.geometry.Offset(x, top), androidx.compose.ui.geometry.Offset(x, bottom), strokeWidth = 1f)
+            drawLine(
+                Color(0xFF263139),
+                androidx.compose.ui.geometry.Offset(x, top),
+                androidx.compose.ui.geometry.Offset(x, bottom),
+                strokeWidth = 1f
+            )
         }
+
         val curve = Path()
-        val points = 220
-        for (point in 0..points) {
-            val fraction = point.toFloat() / points
-            val hz = 20f * 1000f.pow(fraction)
-            var totalDb = 0f
-            if (enabled) {
-                val activeCount = bandCount.coerceAtMost(minOf(frequencies.size, gains.size, qs.size, types.size))
-                for (i in 0 until activeCount) {
-                    val gain = gains[i].coerceIn(-15f, 15f)
-                    val coefficients = BiquadMath.coefficients(
-                        48_000, frequencies[i], qs[i], gain, types[i]
-                    )
-                    totalDb += BiquadMath.magnitudeDb(coefficients, hz, 48_000)
-                }
-                val lowShelf = BiquadMath.coefficients(48_000, 120f, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF)
-                val highShelf = BiquadMath.coefficients(48_000, 8_000f, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF)
-                totalDb += BiquadMath.magnitudeDb(lowShelf, hz, 48_000)
-                totalDb += BiquadMath.magnitudeDb(highShelf, hz, 48_000)
-            }
-            val x = left + fraction * graphWidth
-            val y = yFor(totalDb)
+        curveValues.forEachIndexed { point, db ->
+            val x = left + (point / 220f) * graphWidth
+            val y = yFor(db)
             if (point == 0) curve.moveTo(x, y) else curve.lineTo(x, y)
         }
-        drawPath(curve, color = if (enabled) Accent else Muted, style = Stroke(width = 2.5.dp.toPx()))
+        drawPath(
+            curve,
+            color = if (enabled) Accent else Muted,
+            style = Stroke(width = 2.5.dp.toPx())
+        )
     }
 }
-
