@@ -385,7 +385,6 @@ private fun ProDspScreen() {
                                             onClick = { changeBandCount(count) },
                                             label = { Text(count.toString(), fontSize = 9.sp) },
                                             modifier = Modifier.height(30.dp),
-                                            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp)
                                         )
                                     }
                                 }
@@ -398,7 +397,6 @@ private fun ProDspScreen() {
                                         onClick = { setParametricMode(false) },
                                         label = { Text("GRAPHIC", fontSize = 9.sp) },
                                         modifier = Modifier.height(29.dp),
-                                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)
                                     )
                                     FilterChip(
                                         selected = parametricMode,
