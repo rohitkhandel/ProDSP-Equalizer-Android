@@ -12,7 +12,7 @@ import androidx.media3.session.MediaSessionService
  * Owns playback independently from the Activity so audio can continue while
  * the UI is backgrounded or the screen is locked.
  */
-@UnstableApi
+@OptIn(UnstableApi::class)
 class ProDspPlaybackService : MediaSessionService() {
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
