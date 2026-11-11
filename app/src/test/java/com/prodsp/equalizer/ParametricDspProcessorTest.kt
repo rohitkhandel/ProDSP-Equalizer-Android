@@ -171,6 +171,41 @@ class ParametricDspProcessorTest {
     }
 
     @Test
+    fun autoHeadroomCompensatesThePeakEqBoostInTheRealPcmChain() {
+        val processor = createProcessor()
+        try {
+            processor.setBandFrequency(0, 1_000f)
+            processor.setBandQ(0, 1f)
+            processor.setBandGain(0, 6f)
+            processor.setAutoHeadroom(true)
+            processor.flush()
+
+            val frames = 12_000
+            val input = ShortArray(frames * 2)
+            for (frame in 0 until frames) {
+                val sample = (2_000.0 * sin(2.0 * PI * 1_000.0 * frame / 48_000.0))
+                    .toInt().toShort()
+                input[frame * 2] = sample
+                input[frame * 2 + 1] = sample
+            }
+
+            val output = process(processor, input)
+            var inputPower = 0.0
+            var outputPower = 0.0
+            for (frame in frames / 2 until frames) {
+                val source = input[frame * 2].toDouble()
+                val rendered = output[frame * 2].toDouble()
+                inputPower += source * source
+                outputPower += rendered * rendered
+            }
+            assertEquals(1.0, sqrt(outputPower / inputPower), 0.02)
+            assertEquals(6f, processor.currentAutoHeadroomDb(), 0.05f)
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
     fun stereoLinkedLimiterKeepsBothChannelsBelowTheConfiguredCeiling() {
         val processor = createProcessor()
         try {
