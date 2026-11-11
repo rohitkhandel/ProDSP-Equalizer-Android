@@ -157,7 +157,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         return if (x < 0f) -compressed else compressed
     }
 
-    override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
+    override fun onFlush() {
         filters.forEach { it.clearState() }
         updateTargets()
     }
