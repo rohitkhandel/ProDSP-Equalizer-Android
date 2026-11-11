@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -95,6 +96,8 @@ private fun ProDspScreen() {
         repeat(31) { index -> add(if (index < initialLayout.size) initialLayout[index] else expandedLayout[index]) }
     } }
     val bandQs = remember { mutableStateListOf<Float>().apply { repeat(31) { add(1f) } } }
+    val bandTypes = remember { mutableStateListOf<BiquadFilterType>().apply { repeat(31) { add(BiquadFilterType.PEAK) } } }
+    var showFilterMenu by remember { mutableStateOf(false) }
     var preamp by remember { mutableFloatStateOf(0f) }
     var lowTone by remember { mutableFloatStateOf(0f) }
     var highTone by remember { mutableFloatStateOf(0f) }
@@ -176,9 +179,11 @@ private fun ProDspScreen() {
         val oldFrequencies = FloatArray(oldCount) { frequencies[it] }
         val oldGains = FloatArray(oldCount) { gains[it] }
         val oldQs = FloatArray(oldCount) { bandQs[it] }
+        val oldTypes = (0 until oldCount).map { bandTypes[it] }
         val nextFrequencies = EqBandLayout.frequencies(safeCount)
         val nextGains = EqBandLayout.resampleGains(oldFrequencies, oldGains, nextFrequencies)
         val nextQs = EqBandLayout.resampleNearest(oldFrequencies, oldQs, nextFrequencies)
+        val nearestOldIndices = EqBandLayout.nearestSourceIndices(oldFrequencies, nextFrequencies)
 
         bandCount = safeCount
         dsp.configureBands(safeCount)
@@ -187,8 +192,10 @@ private fun ProDspScreen() {
                 frequencies[index] = nextFrequencies[index]
                 gains[index] = nextGains[index].coerceIn(-15f, 15f)
                 bandQs[index] = nextQs[index].coerceIn(0.3f, 8f)
+                bandTypes[index] = oldTypes[nearestOldIndices[index]]
                 dsp.setBandFrequency(index, frequencies[index])
                 dsp.setBandQ(index, bandQs[index])
+                dsp.setBandType(index, bandTypes[index])
             } else {
                 gains[index] = 0f
             }
@@ -205,6 +212,7 @@ private fun ProDspScreen() {
             .put("gains", JSONArray(gains.toList()))
             .put("frequencies", JSONArray(frequencies.toList()))
             .put("qs", JSONArray(bandQs.toList()))
+            .put("types", JSONArray(bandTypes.map { it.name }))
             .put("preamp", preamp)
             .put("lowTone", lowTone)
             .put("highTone", highTone)
@@ -234,12 +242,17 @@ private fun ProDspScreen() {
             val savedGains = data.optJSONArray("gains") ?: JSONArray()
             val savedFrequencies = data.optJSONArray("frequencies") ?: JSONArray()
             val savedQs = data.optJSONArray("qs") ?: JSONArray()
+            val savedTypes = data.optJSONArray("types") ?: JSONArray()
             for (i in 0 until 31) {
                 gains[i] = savedGains.optDouble(i, 0.0).toFloat()
                 frequencies[i] = savedFrequencies.optDouble(i, bandFrequency(i, bandCount).toDouble()).toFloat()
                 bandQs[i] = savedQs.optDouble(i, 1.0).toFloat()
+                bandTypes[i] = runCatching {
+                    BiquadFilterType.valueOf(savedTypes.optString(i, "PEAK"))
+                }.getOrDefault(BiquadFilterType.PEAK)
                 dsp.setBandFrequency(i, frequencies[i])
                 dsp.setBandQ(i, bandQs[i])
+                dsp.setBandType(i, bandTypes[i])
             }
             preamp = data.optDouble("preamp", 0.0).toFloat()
             lowTone = data.optDouble("lowTone", 0.0).toFloat()
@@ -319,8 +332,21 @@ private fun ProDspScreen() {
                     0 -> {
                         Column(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("31-BAND PARAMETRIC EQ", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                                Text("${bandCount} BANDS", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                Column {
+                                    Text("PARAMETRIC EQ", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    Text("20 Hz — 20 kHz · ${bandCount} active bands", color = Muted, fontSize = 8.sp)
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    listOf(10, 15, 20, 31).forEach { count ->
+                                        FilterChip(
+                                            selected = bandCount == count,
+                                            onClick = { changeBandCount(count) },
+                                            label = { Text(count.toString(), fontSize = 9.sp) },
+                                            modifier = Modifier.height(30.dp),
+                                            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp)
+                                        )
+                                    }
+                                }
                             }
                             Row(Modifier.fillMaxWidth().height(226.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                 Column(Modifier.width(48.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -329,7 +355,7 @@ private fun ProDspScreen() {
                                     Text(String.format(Locale.US, "%+.1f", preamp), color = Color.White, fontSize = 9.sp)
                                 }
                                 for (i in 0 until bandCount) {
-                                    Column(Modifier.width(62.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Column(Modifier.width(62.dp).fillMaxHeight().clickable { selectedBand = i }, horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text("${i + 1}", color = if (selectedBand == i) Color.White else Muted, fontSize = 11.sp, fontWeight = FontWeight.Black)
                                         Text(formatFrequency(frequencies[i]), color = if (selectedBand == i) Accent else Muted, fontSize = 8.sp)
                                         ProDspFader(gains[i], -15f, 15f, Modifier.weight(1f).fillMaxWidth()) { gains[i] = it; dsp.setBandGain(i, it); selectedBand = i }
@@ -337,17 +363,38 @@ private fun ProDspScreen() {
                                         Canvas(Modifier.fillMaxWidth().height(3.dp)) { if (selectedBand == i) drawLine(Accent, Offset(0f, size.height/2), Offset(size.width, size.height/2), 2.dp.toPx()) }
                                     }
                                 }
-                                Column(Modifier.width(42.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                                    Text("ADD", color = Muted, fontSize = 9.sp)
-                                    TextButton(onClick = { if (bandCount < EqBandLayout.MAX_BANDS) changeBandCount(bandCount + 1) }) { Text("+", color = Accent, fontSize = 24.sp) }
-                                }
+
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("SELECTED BAND  ${selectedBand + 1}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Text("TOUCH / DRAG TO ADJUST", color = Muted, fontSize = 8.sp)
+                                Text("BAND ${selectedBand + 1}  ·  ${formatFrequency(frequencies[selectedBand])}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Box {
+                                    TextButton(onClick = { showFilterMenu = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                                        Text(bandTypes[selectedBand].title.uppercase(Locale.US), color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        Text(" ▾", color = Accent, fontSize = 9.sp)
+                                    }
+                                    DropdownMenu(expanded = showFilterMenu, onDismissRequest = { showFilterMenu = false }) {
+                                        BiquadFilterType.entries.forEach { type ->
+                                            DropdownMenuItem(
+                                                text = { Text(type.title) },
+                                                onClick = {
+                                                    bandTypes[selectedBand] = type
+                                                    dsp.setBandType(selectedBand, type)
+                                                    showFilterMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                                ProDspKnob("GAIN", gains[selectedBand], -15f, 15f, "%+.1f dB") { gains[selectedBand] = it; dsp.setBandGain(selectedBand, it) }
+                                if (bandTypes[selectedBand] in setOf(BiquadFilterType.PEAK, BiquadFilterType.LOW_SHELF, BiquadFilterType.HIGH_SHELF)) {
+                                    ProDspKnob("GAIN", gains[selectedBand], -15f, 15f, "%+.1f dB") { gains[selectedBand] = it; dsp.setBandGain(selectedBand, it) }
+                                } else {
+                                    Column(Modifier.width(94.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("GAIN", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                        Text("Not used", color = Muted, fontSize = 10.sp)
+                                    }
+                                }
                                 ProDspKnob("FREQ", frequencies[selectedBand], 20f, 20000f, "") { frequencies[selectedBand] = it; dsp.setBandFrequency(selectedBand, it) }
                                 ProDspKnob("Q FACTOR", bandQs[selectedBand], 0.3f, 8f, "%.2f") { bandQs[selectedBand] = it; dsp.setBandQ(selectedBand, it) }
                             }
@@ -355,7 +402,7 @@ private fun ProDspScreen() {
                                 Text("FREQUENCY RESPONSE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text("LIVE", color = SpectrumGreen, fontSize = 9.sp)
                             }
-                            FrequencyResponseGraph(frequencies, gains, bandQs, bandCount, dspOn, lowTone, highTone)
+                            FrequencyResponseGraph(frequencies, gains, bandQs, bandTypes, bandCount, dspOn, lowTone, highTone)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("20 Hz", color = Muted, fontSize = 8.sp); Text("1 kHz", color = Muted, fontSize = 8.sp); Text("20 kHz", color = Muted, fontSize = 8.sp)
                             }
