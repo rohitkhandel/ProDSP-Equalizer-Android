@@ -63,6 +63,14 @@ private fun ProDspScreen() {
     var playing by remember { mutableStateOf(false) }
     var dspOn by remember { mutableStateOf(true) }
     var peakGuard by remember { mutableStateOf(true) }
+    var compressorOn by remember { mutableStateOf(false) }
+    var compressorThreshold by remember { mutableFloatStateOf(-18f) }
+    var compressorRatio by remember { mutableFloatStateOf(3f) }
+    var compressorAttack by remember { mutableFloatStateOf(10f) }
+    var compressorRelease by remember { mutableFloatStateOf(120f) }
+    var compressorMakeup by remember { mutableFloatStateOf(0f) }
+    var limiterOn by remember { mutableStateOf(true) }
+    var limiterCeiling by remember { mutableFloatStateOf(-1f) }
     var bandCount by remember { mutableIntStateOf(10) }
     var selectedBand by remember { mutableIntStateOf(0) }
     val frequencies = remember { mutableStateListOf<Float>().apply { repeat(31) { add(bandFrequency(it, 31)) } } }
@@ -138,6 +146,14 @@ private fun ProDspScreen() {
             .put("lowTone", lowTone)
             .put("highTone", highTone)
             .put("peakGuard", peakGuard)
+            .put("compressorOn", compressorOn)
+            .put("compressorThreshold", compressorThreshold)
+            .put("compressorRatio", compressorRatio)
+            .put("compressorAttack", compressorAttack)
+            .put("compressorRelease", compressorRelease)
+            .put("compressorMakeup", compressorMakeup)
+            .put("limiterOn", limiterOn)
+            .put("limiterCeiling", limiterCeiling)
             .put("dspOn", dspOn)
         preferences.edit().putString("preset_$name", data.toString())
             .putStringSet("names", (savedPresets.toSet() + name)).apply()
@@ -168,6 +184,22 @@ private fun ProDspScreen() {
             dsp.setLowToneGain(lowTone)
             dsp.setHighToneGain(highTone)
             peakGuard = data.optBoolean("peakGuard", true)
+            compressorOn = data.optBoolean("compressorOn", false)
+            compressorThreshold = data.optDouble("compressorThreshold", -18.0).toFloat()
+            compressorRatio = data.optDouble("compressorRatio", 3.0).toFloat()
+            compressorAttack = data.optDouble("compressorAttack", 10.0).toFloat()
+            compressorRelease = data.optDouble("compressorRelease", 120.0).toFloat()
+            compressorMakeup = data.optDouble("compressorMakeup", 0.0).toFloat()
+            limiterOn = data.optBoolean("limiterOn", true)
+            limiterCeiling = data.optDouble("limiterCeiling", -1.0).toFloat()
+            dsp.setCompressorEnabled(compressorOn)
+            dsp.setCompressorThreshold(compressorThreshold)
+            dsp.setCompressorRatio(compressorRatio)
+            dsp.setCompressorAttack(compressorAttack)
+            dsp.setCompressorRelease(compressorRelease)
+            dsp.setCompressorMakeup(compressorMakeup)
+            dsp.setLimiterEnabled(limiterOn)
+            dsp.setLimiterCeiling(limiterCeiling)
             dspOn = data.optBoolean("dspOn", true)
             dsp.setPreamp(preamp)
             dsp.setPeakGuard(peakGuard)
@@ -293,18 +325,40 @@ private fun ProDspScreen() {
                         ValueSlider("Low Tone Gain · 120 Hz shelf", lowTone, { lowTone = it; dsp.setLowToneGain(it) }, -12f..12f, "%+.1f dB")
                         ValueSlider("High Tone Gain · 8 kHz shelf", highTone, { highTone = it; dsp.setHighToneGain(it) }, -12f..12f, "%+.1f dB")
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Peak protection", color = Color(0xFFDCE3E8), fontSize = 13.sp)
+                            Text("Soft peak protection", color = Color(0xFFDCE3E8), fontSize = 13.sp)
                             Switch(checked = peakGuard, onCheckedChange = { peakGuard = it; dsp.setPeakGuard(it) })
                         }
+                        Divider(color = Color(0xFF34414A))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("DYNAMIC COMPRESSOR", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Peak-envelope compression with attack/release smoothing", color = Muted, fontSize = 11.sp)
+                            }
+                            Switch(checked = compressorOn, onCheckedChange = { compressorOn = it; dsp.setCompressorEnabled(it) })
+                        }
+                        ValueSlider("Threshold", compressorThreshold, { compressorThreshold = it; dsp.setCompressorThreshold(it) }, -36f..0f, "%+.1f dB")
+                        ValueSlider("Ratio", compressorRatio, { compressorRatio = it; dsp.setCompressorRatio(it) }, 1f..20f, "%.1f:1")
+                        ValueSlider("Attack", compressorAttack, { compressorAttack = it; dsp.setCompressorAttack(it) }, 1f..100f, "%.0f ms")
+                        ValueSlider("Release", compressorRelease, { compressorRelease = it; dsp.setCompressorRelease(it) }, 10f..1000f, "%.0f ms")
+                        ValueSlider("Makeup gain", compressorMakeup, { compressorMakeup = it; dsp.setCompressorMakeup(it) }, 0f..12f, "%+.1f dB")
+                        Divider(color = Color(0xFF34414A))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("OUTPUT LIMITER", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Hard sample-peak ceiling after dynamics processing", color = Muted, fontSize = 11.sp)
+                            }
+                            Switch(checked = limiterOn, onCheckedChange = { limiterOn = it; dsp.setLimiterEnabled(it) })
+                        }
+                        ValueSlider("Limiter ceiling", limiterCeiling, { limiterCeiling = it; dsp.setLimiterCeiling(it) }, -12f..0f, "%+.1f dBFS")
                         ValueSlider("Bass boost (device)", bass, { bass = it; deviceEffects.setBassStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
                         ValueSlider("Stereo virtualizer (device)", width, { width = it; deviceEffects.setVirtualizerStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
-                        Text("EQ, per-band Q/frequency, low/high shelves and preamp run in the custom PCM chain. Bass boost and virtualizer use optional Android device effects.", color = Muted, fontSize = 11.sp)
+                        Text("EQ, shelves, preamp, compressor and output limiter run in the custom PCM chain. Bass boost and virtualizer use optional Android device effects.", color = Muted, fontSize = 11.sp)
                     }
                 }
             }
             item {
                 Text("ENGINE", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-                Text("31-band-capable biquad bank · coefficient smoothing · per-channel filter state · PCM peak protection. App-local playback processing; other apps are not automatically routed through it.", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
+                Text("31-band-capable biquad bank · coefficient smoothing · per-channel filter state · dynamics compressor · sample-peak limiter. App-local playback processing; other apps are not automatically routed through it.", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
                 Spacer(Modifier.height(24.dp))
             }
         }
