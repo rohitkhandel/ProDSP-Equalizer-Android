@@ -34,6 +34,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Volatile private var lowToneFrequencyHz = 120f
     @Volatile private var highToneFrequencyHz = 8_000f
     @Volatile private var preampDb = 0f
+    @Volatile private var autoHeadroomEnabled = false
+    @Volatile private var automaticHeadroomDb = 0f
     @Volatile private var enabled = true
     @Volatile private var peakGuard = true
     @Volatile private var compressorEnabled = false
@@ -159,6 +161,11 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     }
 
     fun setPreamp(valueDb: Float) { preampDb = valueDb.coerceIn(-12f, 6f) }
+    @Synchronized fun setAutoHeadroom(enabled: Boolean) {
+        autoHeadroomEnabled = enabled
+        updateTargets()
+    }
+    fun currentAutoHeadroomDb(): Float = automaticHeadroomDb
     fun setEnabled(value: Boolean) { enabled = value }
     fun setPeakGuard(value: Boolean) { peakGuard = value }
     fun setCompressorEnabled(value: Boolean) { compressorEnabled = value }
@@ -313,6 +320,27 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         }
         lowShelfFilter?.setTarget(BiquadMath.coefficients(sampleRate, lowToneFrequencyHz, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF))
         highShelfFilter?.setTarget(BiquadMath.coefficients(sampleRate, highToneFrequencyHz, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF))
+
+        if (autoHeadroomEnabled) {
+            val effectiveEnabled = BooleanArray(31) { index ->
+                index < count && enabledBands[index] && (solo < 0 || solo == index)
+            }
+            automaticHeadroomDb = AutoHeadroomMath.calculateAttenuationDb(
+                sampleRate,
+                count,
+                frequencies,
+                gains,
+                qs,
+                types,
+                effectiveEnabled,
+                lowToneDb,
+                lowToneFrequencyHz,
+                highToneDb,
+                highToneFrequencyHz
+            )
+        } else {
+            automaticHeadroomDb = 0f
+        }
         transitionRemaining = (sampleRate * 0.02f).toInt().coerceAtLeast(1)
     }
 
@@ -323,7 +351,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val input = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
         val targetDspMix = if (enabled) 1f else 0f
         val eqMixStep = if (sampleRate > 0) 1f / (sampleRate * 0.01f) else 1f
-        val targetPreampGain = 10.0.pow((preampDb / 20.0).toDouble()).toFloat()
+        val effectivePreampDb = preampDb - automaticHeadroomDb
+        val targetPreampGain = 10.0.pow((effectivePreampDb / 20.0).toDouble()).toFloat()
         val protect = peakGuard
         val useCompressor = compressorEnabled
         val useLimiter = limiterEnabled
@@ -457,7 +486,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         compressorGain = 1f
         limiterGain = 1f
         enabledMix = if (enabled) 1f else 0f
-        currentPreampGain = 10.0.pow((preampDb / 20.0).toDouble()).toFloat()
+        currentPreampGain = 10.0.pow(((preampDb - automaticHeadroomDb) / 20.0).toDouble()).toFloat()
         currentStereoWidth = stereoWidth
         currentStereoBalance = stereoBalance
         fftWriteIndex = 0
