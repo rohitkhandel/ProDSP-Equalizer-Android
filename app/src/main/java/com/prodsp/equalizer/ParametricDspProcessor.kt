@@ -31,6 +31,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Volatile private var gainsDb = FloatArray(31)
     @Volatile private var qValues = FloatArray(31) { 1.0f }
     @Volatile private var centerFrequencies = FloatArray(31) { i -> defaultFrequency(i, 31) }
+    @Volatile private var lowToneDb = 0f
+    @Volatile private var highToneDb = 0f
     @Volatile private var preampDb = 0f
     @Volatile private var enabled = true
     @Volatile private var peakGuard = true
@@ -38,6 +40,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     private var sampleRate = 0
     private var channelCount = 0
     private var filters = emptyArray<Filter>()
+    private var lowShelfFilter: Filter? = null
+    private var highShelfFilter: Filter? = null
     @Volatile private var transitionRemaining = 0
 
     data class Snapshot(val bandCount: Int, val gainsDb: FloatArray, val centerFrequencies: FloatArray, val qValues: FloatArray, val preampDb: Float, val enabled: Boolean, val peakGuard: Boolean)
@@ -82,6 +86,16 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         updateTargets()
     }
 
+    @Synchronized fun setLowToneGain(valueDb: Float) {
+        lowToneDb = valueDb.coerceIn(-12f, 12f)
+        updateTargets()
+    }
+
+    @Synchronized fun setHighToneGain(valueDb: Float) {
+        highToneDb = valueDb.coerceIn(-12f, 12f)
+        updateTargets()
+    }
+
     fun setPreamp(valueDb: Float) { preampDb = valueDb.coerceIn(-12f, 6f) }
     fun setEnabled(value: Boolean) { enabled = value }
     fun setPeakGuard(value: Boolean) { peakGuard = value }
@@ -97,6 +111,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         sampleRate = inputAudioFormat.sampleRate
         channelCount = inputAudioFormat.channelCount
         filters = Array(31) { Filter(channelCount) }
+        lowShelfFilter = Filter(channelCount)
+        highShelfFilter = Filter(channelCount)
         updateTargets()
         return inputAudioFormat
     }
@@ -112,6 +128,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             val gain = if (i < count) gains[i] else 0f
             filters[i].setTarget(peakingCoefficients(sampleRate, frequency, qs[i], gain))
         }
+        lowShelfFilter?.setTarget(shelfCoefficients(sampleRate, 120f, lowToneDb, true))
+        highShelfFilter?.setTarget(shelfCoefficients(sampleRate, 8_000f, highToneDb, false))
         transitionRemaining = TRANSITION_SAMPLES
     }
 
@@ -126,13 +144,17 @@ class ParametricDspProcessor : BaseAudioProcessor() {
 
         while (input.remaining() >= 2 * channelCount) {
             if (active) {
+                lowShelfFilter?.advance(transitionRemaining)
                 for (band in 0 until bandCount) filters[band].advance(transitionRemaining)
+                highShelfFilter?.advance(transitionRemaining)
             }
             for (channel in 0 until channelCount) {
                 val raw = input.short.toInt() / 32768f
                 var sample = raw
                 if (active) {
+                    sample = lowShelfFilter?.process(sample, channel) ?: sample
                     for (band in 0 until bandCount) sample = filters[band].process(sample, channel)
+                    sample = highShelfFilter?.process(sample, channel) ?: sample
                     sample *= gain
                     if (protect) sample = softLimit(sample)
                 }
@@ -166,6 +188,38 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         )
     }
 
+    private fun shelfCoefficients(rate: Int, frequency: Float, gainDb: Float, lowShelf: Boolean): Coefficients {
+        if (abs(gainDb) < 0.0001f) return Coefficients(1f, 0f, 0f, 0f, 0f)
+        val a = 10.0.pow((gainDb / 40.0).toDouble()).toFloat()
+        val w0 = (2.0 * PI * frequency.coerceIn(20f, rate * 0.45f) / rate).toFloat()
+        val cosine = cos(w0)
+        val sine = sin(w0)
+        val alpha = sine * 0.5f * sqrt((a + 1f / a) * 0f + 2f)
+        val beta = 2f * sqrt(a) * alpha
+        val a0: Float
+        val b0: Float
+        val b1: Float
+        val b2: Float
+        val a1: Float
+        val a2: Float
+        if (lowShelf) {
+            b0 = a * ((a + 1f) - (a - 1f) * cosine + beta)
+            b1 = 2f * a * ((a - 1f) - (a + 1f) * cosine)
+            b2 = a * ((a + 1f) - (a - 1f) * cosine - beta)
+            a0 = (a + 1f) + (a - 1f) * cosine + beta
+            a1 = -2f * ((a - 1f) + (a + 1f) * cosine)
+            a2 = (a + 1f) + (a - 1f) * cosine - beta
+        } else {
+            b0 = a * ((a + 1f) + (a - 1f) * cosine + beta)
+            b1 = -2f * a * ((a - 1f) + (a + 1f) * cosine)
+            b2 = a * ((a + 1f) + (a - 1f) * cosine - beta)
+            a0 = (a + 1f) - (a - 1f) * cosine + beta
+            a1 = 2f * ((a - 1f) - (a + 1f) * cosine)
+            a2 = (a + 1f) - (a - 1f) * cosine - beta
+        }
+        return Coefficients(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
+    }
+
     private fun softLimit(x: Float): Float {
         val magnitude = abs(x)
         if (magnitude <= 0.88f) return x
@@ -175,6 +229,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
 
     override fun onFlush() {
         filters.forEach { it.clearState() }
+        lowShelfFilter?.clearState()
+        highShelfFilter?.clearState()
         updateTargets()
     }
 
@@ -182,6 +238,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         sampleRate = 0
         channelCount = 0
         filters = emptyArray()
+        lowShelfFilter = null
+        highShelfFilter = null
     }
 
     private data class Coefficients(val b0: Float, val b1: Float, val b2: Float, val a1: Float, val a2: Float)
