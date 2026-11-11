@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
@@ -26,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -1163,6 +1165,66 @@ private fun ProDspContent(player: MediaController) {
                         }
                     }
                 }
+            }
+            Divider(color = Color(0xFF252B30), thickness = 1.dp)
+            Row(
+                Modifier.fillMaxWidth()
+                    .background(Color(0xFF10151A))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        trackName,
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(if (playing) "NOW PLAYING" else if (queueCount > 0) "PAUSED" else "PLAYER READY", color = Muted, fontSize = 7.sp, letterSpacing = 0.8.sp)
+                        Text(
+                            "${formatDuration(currentPositionMs)} / ${formatDuration(durationMs)}",
+                            color = Muted,
+                            fontSize = 7.sp
+                        )
+                    }
+                    LinearProgressIndicator(
+                        progress = {
+                            if (durationMs > 0L) {
+                                (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                            } else 0f
+                        },
+                        modifier = Modifier.fillMaxWidth().height(2.dp),
+                        color = Accent,
+                        trackColor = Color(0xFF303940)
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
+                        else player.seekTo(0L)
+                    },
+                    enabled = player.mediaItemCount > 0,
+                    modifier = Modifier.size(38.dp),
+                    contentPadding = PaddingValues(0.dp),
+                    shape = CircleShape
+                ) { Text("‹", fontSize = 20.sp, color = Color.White) }
+                Button(
+                    onClick = { if (playing) player.pause() else if (player.mediaItemCount > 0) player.play() },
+                    enabled = player.mediaItemCount > 0,
+                    modifier = Modifier.size(42.dp),
+                    contentPadding = PaddingValues(0.dp),
+                    shape = CircleShape
+                ) { Text(if (playing) "Ⅱ" else "▶", fontSize = 14.sp) }
+                OutlinedButton(
+                    onClick = { player.seekToNextMediaItem() },
+                    enabled = player.hasNextMediaItem(),
+                    modifier = Modifier.size(38.dp),
+                    contentPadding = PaddingValues(0.dp),
+                    shape = CircleShape
+                ) { Text("›", fontSize = 20.sp, color = Color.White) }
             }
         }
         if (showSaveDialog) {
