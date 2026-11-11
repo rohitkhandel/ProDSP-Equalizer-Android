@@ -57,6 +57,7 @@ private val Muted = Color(0xFF9AA4AF)
 private val Panel = Color(0xFF171D22)
 
 private data class ParametricBackup(
+    val gainsDb: FloatArray,
     val frequencies: FloatArray,
     val qValues: FloatArray,
     val filterTypes: Array<BiquadFilterType>
@@ -312,6 +313,7 @@ private fun ProDspScreen() {
             // Keep the user's parametric curve while showing the fixed-band
             // graphic editor. Switching back restores these filter controls.
             parametricBackup = ParametricBackup(
+                FloatArray(bandCount) { gains[it] },
                 FloatArray(bandCount) { frequencies[it] },
                 FloatArray(bandCount) { bandQs[it] },
                 Array(bandCount) { bandTypes[it] }
@@ -331,10 +333,14 @@ private fun ProDspScreen() {
                 val sameBandCount = saved.frequencies.size == bandCount
                 val targetFrequencies = if (sameBandCount) saved.frequencies else EqBandLayout.frequencies(bandCount)
                 val nearest = EqBandLayout.nearestSourceIndices(saved.frequencies, targetFrequencies)
+                val restoredGains = if (sameBandCount) saved.gainsDb else
+                    EqBandLayout.resampleGains(saved.frequencies, saved.gainsDb, targetFrequencies)
                 for (index in 0 until bandCount) {
+                    gains[index] = restoredGains[index].coerceIn(-15f, 15f)
                     frequencies[index] = targetFrequencies[index]
                     bandQs[index] = saved.qValues[nearest[index]].coerceIn(0.3f, 8f)
                     bandTypes[index] = saved.filterTypes[nearest[index]]
+                    dsp.setBandGain(index, gains[index])
                     dsp.setBandFrequency(index, frequencies[index])
                     dsp.setBandQ(index, bandQs[index])
                     dsp.setBandType(index, bandTypes[index])
