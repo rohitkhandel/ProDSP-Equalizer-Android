@@ -186,7 +186,6 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val previous = spectrumBands
         val next = FloatArray(48)
         val rate = sampleRate.coerceAtLeast(1).toFloat()
-        val nyquist = rate * 0.5f
         for (band in next.indices) {
             val lowHz = 30f * (16_000f / 30f).pow(band.toFloat() / next.size)
             val highHz = 30f * (16_000f / 30f).pow((band + 1f) / next.size)
@@ -293,6 +292,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 if (useCompressor) sample *= compressorGain * makeup
                 if (protect) sample = softLimit(sample)
                 if (useLimiter) sample = sample.coerceIn(-ceiling, ceiling)
+                frame[channel] = sample
                 val quantized = (sample.coerceIn(-1f, 0.9999695f) * 32768f).toInt()
                 output.putShort(quantized.toShort())
             }
