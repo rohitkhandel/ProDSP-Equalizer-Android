@@ -34,6 +34,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     }
     @Volatile private var lowToneDb = 0f
     @Volatile private var highToneDb = 0f
+    @Volatile private var lowToneFrequencyHz = 120f
+    @Volatile private var highToneFrequencyHz = 8_000f
     @Volatile private var preampDb = 0f
     @Volatile private var enabled = true
     @Volatile private var peakGuard = true
@@ -46,6 +48,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Volatile private var limiterEnabled = true
     @Volatile private var limiterCeilingDb = -1f
     @Volatile private var stereoWidth = 1f
+    @Volatile private var stereoBalance = 0f
 
     private var compressorEnvelope = 0f
     private var compressorGain = 1f
@@ -127,6 +130,16 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         updateTargets()
     }
 
+    @Synchronized fun setLowToneFrequency(valueHz: Float) {
+        lowToneFrequencyHz = valueHz.coerceIn(30f, 800f)
+        updateTargets()
+    }
+
+    @Synchronized fun setHighToneFrequency(valueHz: Float) {
+        highToneFrequencyHz = valueHz.coerceIn(1_000f, 18_000f)
+        updateTargets()
+    }
+
     fun setPreamp(valueDb: Float) { preampDb = valueDb.coerceIn(-12f, 6f) }
     fun setEnabled(value: Boolean) { enabled = value }
     fun setPeakGuard(value: Boolean) { peakGuard = value }
@@ -139,6 +152,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     fun setLimiterEnabled(value: Boolean) { limiterEnabled = value }
     fun setLimiterCeiling(valueDb: Float) { limiterCeilingDb = valueDb.coerceIn(-12f, 0f) }
     fun setStereoWidth(percent: Float) { stereoWidth = percent.coerceIn(0f, 200f) / 100f }
+    fun setStereoBalance(percent: Float) { stereoBalance = percent.coerceIn(-100f, 100f) }
     @Synchronized fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), centerFrequencies.copyOf(), qValues.copyOf(), bandTypes.copyOf(), preampDb, enabled, peakGuard)
 
     fun spectrumSnapshot(): FloatArray = spectrumBands.copyOf()
@@ -245,8 +259,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             val gain = if (i < count) gains[i] else 0f
             filters[i].setTarget(BiquadMath.coefficients(sampleRate, frequency, qs[i], gain, types[i]))
         }
-        lowShelfFilter?.setTarget(BiquadMath.coefficients(sampleRate, 120f, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF))
-        highShelfFilter?.setTarget(BiquadMath.coefficients(sampleRate, 8_000f, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF))
+        lowShelfFilter?.setTarget(BiquadMath.coefficients(sampleRate, lowToneFrequencyHz, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF))
+        highShelfFilter?.setTarget(BiquadMath.coefficients(sampleRate, highToneFrequencyHz, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF))
         transitionRemaining = (sampleRate * 0.02f).toInt().coerceAtLeast(1)
     }
 
@@ -268,6 +282,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val makeup = 10.0.pow((compressorMakeupDb / 20.0).toDouble()).toFloat()
         val ceiling = 10.0.pow((limiterCeilingDb / 20.0).toDouble()).toFloat()
         val width = stereoWidth
+        val balance = stereoBalance
         val frame = frameScratch
 
         while (input.remaining() >= 2 * channelCount) {
@@ -296,6 +311,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 val right = frame[1]
                 frame[0] = StereoWidthMath.left(left, right, width * 100f)
                 frame[1] = StereoWidthMath.right(left, right, width * 100f)
+            }
+            if (channelCount == 2 && balance != 0f) {
+                frame[0] *= StereoWidthMath.leftBalanceGain(balance)
+                frame[1] *= StereoWidthMath.rightBalanceGain(balance)
             }
             for (channel in 0 until channelCount) framePeak = maxOf(framePeak, abs(frame[channel]))
 
