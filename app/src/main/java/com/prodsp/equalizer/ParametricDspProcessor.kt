@@ -24,6 +24,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Volatile private var gainsDb = FloatArray(31)
     @Volatile private var qValues = FloatArray(31) { 1.0f }
     @Volatile private var bandTypes = Array(31) { BiquadFilterType.PEAK }
+    @Volatile private var bandEnabled = BooleanArray(31) { true }
     @Volatile private var centerFrequencies = FloatArray(31) { i ->
         if (i < 10) defaultFrequency(i, 10) else defaultFrequency(i, 31)
     }
@@ -70,7 +71,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     private var currentStereoWidth = 1f
     private var currentStereoBalance = 0f
 
-    data class Snapshot(val bandCount: Int, val gainsDb: FloatArray, val centerFrequencies: FloatArray, val qValues: FloatArray, val bandTypes: Array<BiquadFilterType>, val preampDb: Float, val enabled: Boolean, val peakGuard: Boolean)
+    data class Snapshot(val bandCount: Int, val gainsDb: FloatArray, val centerFrequencies: FloatArray, val qValues: FloatArray, val bandTypes: Array<BiquadFilterType>, val bandEnabled: BooleanArray, val preampDb: Float, val enabled: Boolean, val peakGuard: Boolean)
 
     @Synchronized fun bandFrequency(index: Int): Float = centerFrequencies.getOrElse(index) { 1000f }
     @Synchronized fun bandQ(index: Int): Float = qValues.getOrElse(index) { 1f }
@@ -121,6 +122,14 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         updateTargets()
     }
 
+    @Synchronized fun setBandEnabled(index: Int, isEnabled: Boolean) {
+        if (index !in 0 until bandCount) return
+        val copy = bandEnabled.copyOf()
+        copy[index] = isEnabled
+        bandEnabled = copy
+        updateTargets()
+    }
+
     @Synchronized fun setLowToneGain(valueDb: Float) {
         lowToneDb = valueDb.coerceIn(-12f, 12f)
         updateTargets()
@@ -154,7 +163,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     fun setLimiterCeiling(valueDb: Float) { limiterCeilingDb = valueDb.coerceIn(-12f, 0f) }
     fun setStereoWidth(percent: Float) { stereoWidth = percent.coerceIn(0f, 200f) / 100f }
     fun setStereoBalance(percent: Float) { stereoBalance = percent.coerceIn(-100f, 100f) }
-    @Synchronized fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), centerFrequencies.copyOf(), qValues.copyOf(), bandTypes.copyOf(), preampDb, enabled, peakGuard)
+    @Synchronized fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), centerFrequencies.copyOf(), qValues.copyOf(), bandTypes.copyOf(), bandEnabled.copyOf(), preampDb, enabled, peakGuard)
 
     fun spectrumSnapshot(): FloatArray = spectrumBands.copyOf()
     fun currentSampleRate(): Int = sampleRate.takeIf { it > 0 } ?: 48_000
@@ -283,10 +292,14 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val frequencies = centerFrequencies.copyOf()
         val qs = qValues.copyOf()
         val types = bandTypes.copyOf()
+        val enabledBands = bandEnabled.copyOf()
         for (i in 0 until 31) {
-            val frequency = frequencies[i].coerceIn(20f, sampleRate * 0.475f)
-            val gain = if (i < count) gains[i] else 0f
-            filters[i].setTarget(BiquadMath.coefficients(sampleRate, frequency, qs[i], gain, types[i]))
+            if (i >= count || !enabledBands[i]) {
+                filters[i].setTarget(BiquadCoefficients(1f, 0f, 0f, 0f, 0f))
+            } else {
+                val frequency = frequencies[i].coerceIn(20f, sampleRate * 0.475f)
+                filters[i].setTarget(BiquadMath.coefficients(sampleRate, frequency, qs[i], gains[i], types[i]))
+            }
         }
         lowShelfFilter?.setTarget(BiquadMath.coefficients(sampleRate, lowToneFrequencyHz, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF))
         highShelfFilter?.setTarget(BiquadMath.coefficients(sampleRate, highToneFrequencyHz, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF))
