@@ -654,6 +654,39 @@ private fun ProDspScreen() {
                                     Text("GRAPHIC BAND", color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("BAND ACTIVE", color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.width(6.dp))
+                                    Switch(
+                                        checked = bandEnabled[selectedBand],
+                                        onCheckedChange = {
+                                            bandEnabled[selectedBand] = it
+                                            dsp.setBandEnabled(selectedBand, it)
+                                        },
+                                        modifier = Modifier.height(32.dp)
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        gains[selectedBand] = 0f
+                                        bandQs[selectedBand] = 1f
+                                        bandTypes[selectedBand] = BiquadFilterType.PEAK
+                                        bandEnabled[selectedBand] = true
+                                        if (parametricMode) {
+                                            frequencies[selectedBand] = EqBandLayout.frequencyAt(selectedBand, bandCount, maxBandFrequencyHz)
+                                        }
+                                        dsp.setBandGain(selectedBand, 0f)
+                                        dsp.setBandQ(selectedBand, 1f)
+                                        dsp.setBandType(selectedBand, BiquadFilterType.PEAK)
+                                        dsp.setBandEnabled(selectedBand, true)
+                                        if (parametricMode) dsp.setBandFrequency(selectedBand, frequencies[selectedBand])
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                ) {
+                                    Text("RESET BAND", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                                 if (bandTypes[selectedBand] in setOf(BiquadFilterType.PEAK, BiquadFilterType.LOW_SHELF, BiquadFilterType.HIGH_SHELF) || !parametricMode) {
                                     ProDspKnob("GAIN", gains[selectedBand], -15f, 15f, "%+.1f dB") { gains[selectedBand] = it; dsp.setBandGain(selectedBand, it) }
@@ -683,6 +716,7 @@ private fun ProDspScreen() {
                                 gains = gains,
                                 qs = bandQs,
                                 types = bandTypes,
+                                bandEnabled = bandEnabled,
                                 bandCount = bandCount,
                                 enabled = dspOn,
                                 lowToneDb = lowTone,
@@ -1013,6 +1047,7 @@ private fun FrequencyResponseGraph(
     gains: List<Float>,
     qs: List<Float>,
     types: List<BiquadFilterType>,
+    bandEnabled: List<Boolean>,
     bandCount: Int,
     enabled: Boolean,
     lowToneDb: Float,
@@ -1027,13 +1062,14 @@ private fun FrequencyResponseGraph(
 ) {
     // Snapshot the EQ controls and cache the curve. The live spectrum updates
     // frequently; they should not force expensive biquad/trigonometric work.
-    val activeCount = bandCount.coerceAtMost(minOf(frequencies.size, gains.size, qs.size, types.size))
+    val activeCount = bandCount.coerceAtMost(minOf(frequencies.size, gains.size, qs.size, types.size, bandEnabled.size))
+    val enabledValues = bandEnabled.take(activeCount)
     val frequencyValues = frequencies.take(activeCount)
     val gainValues = gains.take(activeCount)
     val qValues = qs.take(activeCount)
     val typeValues = types.take(activeCount)
     val curveValues = remember(
-        frequencyValues, gainValues, qValues, typeValues, enabled,
+        frequencyValues, gainValues, qValues, typeValues, enabledValues, enabled,
         lowToneDb, highToneDb, lowToneFrequencyHz, highToneFrequencyHz, sampleRateHz
     ) {
         if (!enabled) {
@@ -1041,7 +1077,7 @@ private fun FrequencyResponseGraph(
         } else {
             // Coefficients depend on the band controls, not on each graph
             // sample. Build once per edit, then evaluate the response curve.
-            val bandCoefficients = (0 until activeCount).map { index ->
+            val bandCoefficients = (0 until activeCount).filter { enabledValues[it] }.map { index ->
                 BiquadMath.coefficients(
                     sampleRateHz,
                     frequencyValues[index],
@@ -1179,7 +1215,13 @@ private fun FrequencyResponseGraph(
                 )
             ) gainValues[index] else 0f
             val y = yFor(handleGain)
-            if (index == selectedBand) {
+            if (!enabledValues[index]) {
+                drawCircle(
+                    color = Muted.copy(alpha = 0.45f),
+                    radius = if (index == selectedBand) 5.dp.toPx() else 3.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(x, y)
+                )
+            } else if (index == selectedBand) {
                 drawCircle(
                     color = Accent.copy(alpha = 0.2f),
                     radius = 11.dp.toPx(),
