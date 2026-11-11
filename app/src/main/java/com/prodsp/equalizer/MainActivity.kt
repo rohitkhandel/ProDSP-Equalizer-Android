@@ -81,6 +81,10 @@ private fun ProDspScreen() {
     val player = remember { ExoPlayer.Builder(context, ProDspRenderersFactory(context, dsp)).build() }
     val deviceEffects = remember { AudioEffectsEngine() }
     var trackName by remember { mutableStateOf("No track selected") }
+    var queueCount by remember { mutableIntStateOf(0) }
+    var currentPositionMs by remember { mutableLongStateOf(0L) }
+    var durationMs by remember { mutableLongStateOf(0L) }
+    var seeking by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Choose a music file to start") }
     var spectrum by remember { mutableStateOf(FloatArray(48)) }
     var sampleRateHz by remember { mutableIntStateOf(48_000) }
@@ -129,14 +133,18 @@ private fun ProDspScreen() {
     val pageScope = rememberCoroutineScope()
     val maxBandFrequencyHz = minOf(20_000f, sampleRateHz * 0.475f).coerceAtLeast(20f)
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
-            player.setMediaItem(MediaItem.fromUri(uri))
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
+            }
+            player.setMediaItems(uris.map { uri -> MediaItem.fromUri(uri) })
             player.prepare()
             player.play()
-            trackName = uri.lastPathSegment?.substringAfterLast('/') ?: "Selected audio"
-            status = "Loading audio…"
+            queueCount = uris.size
+            trackName = queryDisplayName(context, uris.first())
+            currentPositionMs = 0L
+            status = "Loading $queueCount tracks…"
         }
     }
 
@@ -188,6 +196,15 @@ private fun ProDspScreen() {
         }
     }
 
+    LaunchedEffect(player) {
+        while (true) {
+            val playerDuration = player.duration
+            durationMs = if (playerDuration > 0L && playerDuration != androidx.media3.common.C.TIME_UNSET) playerDuration else 0L
+            if (!seeking) currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+            delay(250)
+        }
+    }
+
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -198,6 +215,11 @@ private fun ProDspScreen() {
                 if (playbackState == Player.STATE_READY) status = "Ready · custom DSP chain connected"
                 else if (playbackState == Player.STATE_BUFFERING) status = "Buffering…"
                 else if (playbackState == Player.STATE_ENDED) playing = false
+            }
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                val uri = mediaItem?.localConfiguration?.uri
+                if (uri != null) trackName = queryDisplayName(context, uri)
+                currentPositionMs = 0L
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 status = "Playback error: ${error.errorCodeName}"
@@ -676,12 +698,35 @@ private fun ProDspScreen() {
                                 }
                             }
                             Divider(color = Color(0xFF252B30))
-                            Text("LOCAL PLAYER", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
-                            Text(trackName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            Text(status, color = Muted, fontSize = 10.sp)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Button(onClick = { picker.launch(arrayOf("audio/*")) }) { Text("CHOOSE AUDIO") }
-                                OutlinedButton(onClick = { if (playing) player.pause() else if (player.mediaItemCount > 0) player.play() }, enabled = player.mediaItemCount > 0) { Text(if (playing) "PAUSE" else "PLAY") }
+                            Text("LOCAL MUSIC PLAYER", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
+                            Text(trackName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text("$queueCount tracks in queue · $status", color = Muted, fontSize = 10.sp, maxLines = 2)
+                            Slider(
+                                value = if (durationMs > 0L) currentPositionMs.coerceIn(0L, durationMs).toFloat() else 0f,
+                                onValueChange = { currentPositionMs = it.toLong(); seeking = true },
+                                onValueChangeFinished = { player.seekTo(currentPositionMs); seeking = false },
+                                enabled = durationMs > 0L,
+                                valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f)
+                            )
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(formatDuration(currentPositionMs), color = Muted, fontSize = 9.sp)
+                                Text(formatDuration(durationMs), color = Muted, fontSize = 9.sp)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedButton(
+                                    onClick = { if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0L) },
+                                    enabled = player.mediaItemCount > 0
+                                ) { Text("PREV", fontSize = 9.sp) }
+                                Button(
+                                    onClick = { if (playing) player.pause() else if (player.mediaItemCount > 0) player.play() },
+                                    enabled = player.mediaItemCount > 0
+                                ) { Text(if (playing) "PAUSE" else "PLAY") }
+                                OutlinedButton(
+                                    onClick = { player.seekToNextMediaItem() },
+                                    enabled = player.hasNextMediaItem()
+                                ) { Text("NEXT", fontSize = 9.sp) }
+                                Spacer(Modifier.weight(1f))
+                                OutlinedButton(onClick = { picker.launch(arrayOf("audio/*")) }) { Text("ADD TRACKS", fontSize = 9.sp) }
                             }
                             OutlinedButton(onClick = { for (i in 0 until 31) gains[i] = 0f; syncGains() }) { Text("RESET EQUALIZER") }
                             Text("Processing is currently applied to this app's local player, not system-wide audio.", color = Muted, fontSize = 10.sp)
@@ -803,6 +848,34 @@ private fun ValueSlider(label: String, value: Float, onValue: (Float) -> Unit, r
             Text(String.format(Locale.US, format, value), color = Accent, fontSize = 12.sp)
         }
         Slider(value = value, onValueChange = onValue, valueRange = range)
+    }
+}
+
+
+private fun queryDisplayName(context: android.content.Context, uri: Uri): String {
+    val projection = arrayOf(android.provider.OpenableColumns.DISPLAY_NAME)
+    return try {
+        context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) cursor.getString(index)?.takeIf { it.isNotBlank() } else null
+            } else null
+        } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Audio track"
+    } catch (_: Exception) {
+        uri.lastPathSegment?.substringAfterLast('/') ?: "Audio track"
+    }
+}
+
+private fun formatDuration(milliseconds: Long): String {
+    if (milliseconds <= 0L) return "0:00"
+    val totalSeconds = milliseconds / 1000L
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    val hours = minutes / 60L
+    return if (hours > 0L) {
+        String.format(Locale.US, "%d:%02d:%02d", hours, minutes % 60L, seconds)
+    } else {
+        String.format(Locale.US, "%d:%02d", minutes, seconds)
     }
 }
 
