@@ -81,6 +81,8 @@ private fun ProDspScreen() {
     var playing by remember { mutableStateOf(false) }
     var effectsOn by remember { mutableStateOf(true) }
     var bass by remember { mutableFloatStateOf(0f) }
+    var lowTone by remember { mutableFloatStateOf(0f) }
+    var highTone by remember { mutableFloatStateOf(0f) }
     var width by remember { mutableFloatStateOf(0f) }
     var preamp by remember { mutableFloatStateOf(1f) }
     var durationMs by remember { mutableIntStateOf(0) }
@@ -238,10 +240,27 @@ private fun ProDspScreen() {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("TONE & SPATIAL", color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                         ValueSlider("Bass boost", bass, { bass = it; if (effectsOn) engine.setBassStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
+                        ValueSlider("Low tone gain", lowTone, { value ->
+                            lowTone = value
+                            bands.firstOrNull()?.let { first ->
+                                val level = value.coerceIn(first.minDb, first.maxDb)
+                                bands[0] = first.copy(valueDb = level)
+                                if (effectsOn) engine.setBandLevel(first.index, (level * 100).toInt())
+                            }
+                        }, -12f..12f, "%+.1f dB")
+                        ValueSlider("High tone gain", highTone, { value ->
+                            highTone = value
+                            bands.lastOrNull()?.let { last ->
+                                val level = value.coerceIn(last.minDb, last.maxDb)
+                                val lastIndex = bands.lastIndex
+                                bands[lastIndex] = last.copy(valueDb = level)
+                                if (effectsOn) engine.setBandLevel(last.index, (level * 100).toInt())
+                            }
+                        }, -12f..12f, "%+.1f dB")
                         ValueSlider("Stereo width", width, { width = it; if (effectsOn) engine.setVirtualizerStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
                         Text("Preamp  ${(preamp * 100).toInt()}%", color = Color(0xFFDCE3E8), fontSize = 13.sp)
                         Slider(value = preamp, onValueChange = { preamp = it; player.volume = it }, valueRange = 0f..1f)
-                        Text("Tone controls use your phone's native EQ bands. Stereo width depends on device support.", color = Color(0xFF8E99A4), fontSize = 11.sp)
+                        Text("Tone gains adjust the lowest and highest native EQ bands. Stereo width depends on device support.", color = Color(0xFF8E99A4), fontSize = 11.sp)
                     }
                 }
             }
