@@ -38,7 +38,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     private var sampleRate = 0
     private var channelCount = 0
     private var filters = emptyArray<Filter>()
-    private var transitionRemaining = 0
+    @Volatile private var transitionRemaining = 0
 
     data class Snapshot(val bandCount: Int, val gainsDb: FloatArray, val centerFrequencies: FloatArray, val qValues: FloatArray, val preampDb: Float, val enabled: Boolean, val peakGuard: Boolean)
 
@@ -125,15 +125,14 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val protect = peakGuard
 
         while (input.remaining() >= 2 * channelCount) {
+            if (active) {
+                for (band in 0 until bandCount) filters[band].advance(transitionRemaining)
+            }
             for (channel in 0 until channelCount) {
                 val raw = input.short.toInt() / 32768f
                 var sample = raw
                 if (active) {
-                    for (band in 0 until bandCount) {
-                        val filter = filters[band]
-                        filter.advance(transitionRemaining, TRANSITION_SAMPLES)
-                        sample = filter.process(sample, channel)
-                    }
+                    for (band in 0 until bandCount) sample = filters[band].process(sample, channel)
                     sample *= gain
                     if (protect) sample = softLimit(sample)
                 }
@@ -195,7 +194,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
 
         fun setTarget(value: Coefficients) { target = value }
 
-        fun advance(remaining: Int, total: Int) {
+        fun advance(remaining: Int) {
             if (remaining <= 0) {
                 current = target
                 return
