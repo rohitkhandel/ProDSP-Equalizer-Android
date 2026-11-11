@@ -16,6 +16,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.lazy.LazyColumn
@@ -397,7 +398,7 @@ private fun ProDspScreen() {
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
                 listOf("EQ", "TONE", "DYN", "LIB").forEachIndexed { index, label ->
-                    TextButton(onClick = { pagerState.requestPage(index) }) {
+                    TextButton(onClick = { pageScope.launch { pagerState.animateScrollToPage(index) } }) {
                         Text(label, color = if (pagerState.currentPage == index) Accent else Muted, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
                     }
                 }
