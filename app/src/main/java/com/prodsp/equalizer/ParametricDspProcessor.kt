@@ -44,11 +44,13 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Volatile private var compressorMakeupDb = 0f
     @Volatile private var limiterEnabled = true
     @Volatile private var limiterCeilingDb = -1f
+    @Volatile private var limiterReleaseMs = 80f
     @Volatile private var stereoWidth = 1f
     @Volatile private var stereoBalance = 0f
 
     private var compressorEnvelope = 0f
     private var compressorGain = 1f
+    private var limiterGain = 1f
     private val fftSize = 2048
     private val fftReal = FloatArray(fftSize)
     private val fftImag = FloatArray(fftSize)
@@ -167,6 +169,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     fun setCompressorMakeup(valueDb: Float) { compressorMakeupDb = valueDb.coerceIn(0f, 12f) }
     fun setLimiterEnabled(value: Boolean) { limiterEnabled = value }
     fun setLimiterCeiling(valueDb: Float) { limiterCeilingDb = valueDb.coerceIn(-12f, 0f) }
+    fun setLimiterRelease(valueMs: Float) { limiterReleaseMs = valueMs.coerceIn(10f, 500f) }
     fun setStereoWidth(percent: Float) { stereoWidth = percent.coerceIn(0f, 200f) / 100f }
     fun setStereoBalance(percent: Float) { stereoBalance = percent.coerceIn(-100f, 100f) }
     @Synchronized fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), centerFrequencies.copyOf(), qValues.copyOf(), bandTypes.copyOf(), bandEnabled.copyOf(), preampDb, enabled, peakGuard)
@@ -330,6 +333,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val releaseCoeff = if (sampleRate > 0) exp(-1f / (releaseSeconds * sampleRate)) else 0f
         val makeup = 10.0.pow((compressorMakeupDb / 20.0).toDouble()).toFloat()
         val ceiling = 10.0.pow((limiterCeilingDb / 20.0).toDouble()).toFloat()
+        val limiterReleaseSeconds = limiterReleaseMs / 1000f
+        val limiterReleaseCoeff = if (sampleRate > 0) {
+            exp(-1f / (limiterReleaseSeconds * sampleRate))
+        } else 0f
         val targetWidth = stereoWidth
         val targetBalance = stereoBalance
         val controlSmoothing = if (sampleRate > 0) {
@@ -387,11 +394,37 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 compressorGain = 1f
             }
 
+            // Apply compression and peak guard first, then measure the
+            // post-dynamics stereo-linked peak for the output limiter.
+            var postDynamicsPeak = 0f
             for (channel in 0 until channelCount) {
                 var sample = frame[channel]
                 if (useCompressor) sample *= compressorGain * makeup
                 if (protect) sample = softLimit(sample)
-                if (useLimiter) sample = sample.coerceIn(-ceiling, ceiling)
+                frame[channel] = sample
+                postDynamicsPeak = maxOf(postDynamicsPeak, abs(sample))
+            }
+
+            if (useLimiter) {
+                val targetLimiterGain = if (postDynamicsPeak > ceiling) {
+                    ceiling / postDynamicsPeak.coerceAtLeast(1e-9f)
+                } else {
+                    1f
+                }
+                // Instant linked attack protects the ceiling. Recovery uses
+                // a smooth exponential release to avoid abrupt gain pumping.
+                if (targetLimiterGain < limiterGain) {
+                    limiterGain = targetLimiterGain
+                } else {
+                    limiterGain += (1f - limiterGain) * (1f - limiterReleaseCoeff)
+                }
+            } else {
+                limiterGain = 1f
+            }
+
+            for (channel in 0 until channelCount) {
+                var sample = frame[channel]
+                if (useLimiter) sample *= limiterGain
                 // The master DSP switch crossfades the complete processed
                 // signal against the original PCM, not just the EQ filters.
                 sample = dryFrameScratch[channel] +
@@ -422,6 +455,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     override fun onFlush() {
         compressorEnvelope = 0f
         compressorGain = 1f
+        limiterGain = 1f
         enabledMix = if (enabled) 1f else 0f
         currentPreampGain = 10.0.pow((preampDb / 20.0).toDouble()).toFloat()
         currentStereoWidth = stereoWidth
@@ -439,6 +473,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         channelCount = 0
         compressorEnvelope = 0f
         compressorGain = 1f
+        limiterGain = 1f
         fftWriteIndex = 0
         spectrumBands = FloatArray(48)
         filters = emptyArray()
