@@ -60,7 +60,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     }
     private var fftWriteIndex = 0
     @Volatile private var spectrumBands = FloatArray(48)
-    private var sampleRate = 0
+    @Volatile private var sampleRate = 0
     private var channelCount = 0
     private val frameScratch = FloatArray(2)
     private var filters = emptyArray<Filter>()
@@ -159,6 +159,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Synchronized fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), centerFrequencies.copyOf(), qValues.copyOf(), bandTypes.copyOf(), preampDb, enabled, peakGuard)
 
     fun spectrumSnapshot(): FloatArray = spectrumBands.copyOf()
+    fun currentSampleRate(): Int = sampleRate.takeIf { it > 0 } ?: 48_000
+    fun maximumFrequencyHz(): Float = minOf(20_000f, currentSampleRate() * 0.475f).coerceAtLeast(20f)
 
     private fun pushSpectrumSample(leftSample: Float, rightSample: Float) {
         val window = fftWindow[fftWriteIndex]
