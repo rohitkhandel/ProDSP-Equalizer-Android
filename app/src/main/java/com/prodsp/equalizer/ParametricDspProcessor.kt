@@ -427,35 +427,43 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     }
 
     private class Filter(channels: Int) {
-        private var current = BiquadCoefficients(1f, 0f, 0f, 0f, 0f)
-        @Volatile private var target = current
+        // Mutable scalar coefficients avoid allocating a data class on the
+        // audio thread for every sample during a parameter transition.
+        private var currentB0 = 1f
+        private var currentB1 = 0f
+        private var currentB2 = 0f
+        private var currentA1 = 0f
+        private var currentA2 = 0f
+        @Volatile private var target = BiquadCoefficients(1f, 0f, 0f, 0f, 0f)
         private val z1 = FloatArray(channels)
         private val z2 = FloatArray(channels)
 
-        fun setTarget(value: BiquadCoefficients) { target = value }
+        fun setTarget(value: BiquadCoefficients) {
+            target = value
+        }
 
         fun advance(remaining: Int) {
+            val next = target
             if (remaining <= 0) {
-                current = target
+                currentB0 = next.b0
+                currentB1 = next.b1
+                currentB2 = next.b2
+                currentA1 = next.a1
+                currentA2 = next.a2
                 return
             }
-            val t = 1f / remaining.coerceAtLeast(1)
-            val from = current
-            val to = target
-            current = BiquadCoefficients(
-                from.b0 + (to.b0 - from.b0) * t,
-                from.b1 + (to.b1 - from.b1) * t,
-                from.b2 + (to.b2 - from.b2) * t,
-                from.a1 + (to.a1 - from.a1) * t,
-                from.a2 + (to.a2 - from.a2) * t
-            )
+            val amount = 1f / remaining.coerceAtLeast(1)
+            currentB0 += (next.b0 - currentB0) * amount
+            currentB1 += (next.b1 - currentB1) * amount
+            currentB2 += (next.b2 - currentB2) * amount
+            currentA1 += (next.a1 - currentA1) * amount
+            currentA2 += (next.a2 - currentA2) * amount
         }
 
         fun process(input: Float, channel: Int): Float {
-            val c = current
-            val output = c.b0 * input + z1[channel]
-            z1[channel] = c.b1 * input - c.a1 * output + z2[channel]
-            z2[channel] = c.b2 * input - c.a2 * output
+            val output = currentB0 * input + z1[channel]
+            z1[channel] = currentB1 * input - currentA1 * output + z2[channel]
+            z2[channel] = currentB2 * input - currentA2 * output
             return output
         }
 
