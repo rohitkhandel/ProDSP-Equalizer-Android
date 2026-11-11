@@ -17,7 +17,6 @@ class ProDspRenderersFactory(
     ): AudioSink {
         return DefaultAudioSink.Builder(context)
             .setEnableFloatOutput(false)
-            .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
             .setAudioProcessors(arrayOf<AudioProcessor>(processor))
             .build()
     }
