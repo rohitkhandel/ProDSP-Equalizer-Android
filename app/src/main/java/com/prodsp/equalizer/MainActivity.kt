@@ -516,6 +516,7 @@ private fun ProDspScreen() {
             dsp.setPreamp(preamp)
             dsp.setPeakGuard(peakGuard)
             dsp.setEnabled(dspOn)
+            deviceEffects.setEnabled(dspOn)
             syncGains()
             selectedBand = 0
         } catch (_: Exception) {
@@ -567,7 +568,11 @@ private fun ProDspScreen() {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (dspOn) "DSP ACTIVE" else "DSP BYPASS", color = if (dspOn) Accent else Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.width(8.dp))
-                    Switch(checked = dspOn, onCheckedChange = { dspOn = it; dsp.setEnabled(it) })
+                    Switch(checked = dspOn, onCheckedChange = {
+                        dspOn = it
+                        dsp.setEnabled(it)
+                        deviceEffects.setEnabled(it)
+                    })
                 }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
