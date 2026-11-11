@@ -10,6 +10,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
 import kotlin.math.sin
+import kotlin.math.pow
 import kotlin.math.sqrt
 
 @OptIn(UnstableApi::class)
