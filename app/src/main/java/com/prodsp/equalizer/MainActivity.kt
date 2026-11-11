@@ -85,6 +85,7 @@ private fun ProDspScreen() {
     var currentPositionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var seeking by remember { mutableStateOf(false) }
+    var replaceQueueOnPick by remember { mutableStateOf(true) }
     var status by remember { mutableStateOf("Choose a music file to start") }
     var spectrum by remember { mutableStateOf(FloatArray(48)) }
     var sampleRateHz by remember { mutableIntStateOf(48_000) }
@@ -140,13 +141,21 @@ private fun ProDspScreen() {
             uris.forEach { uri ->
                 try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
             }
-            player.setMediaItems(uris.map { uri -> MediaItem.fromUri(uri) })
-            player.prepare()
-            player.play()
-            queueCount = uris.size
-            trackName = queryDisplayName(context, uris.first())
-            currentPositionMs = 0L
-            status = "Loading $queueCount tracks…"
+            val mediaItems = uris.map { uri -> MediaItem.fromUri(uri) }
+            val replaceQueue = replaceQueueOnPick || player.mediaItemCount == 0
+            if (replaceQueue) {
+                player.setMediaItems(mediaItems)
+                queueCount = mediaItems.size
+                trackName = queryDisplayName(context, uris.first())
+                currentPositionMs = 0L
+                player.prepare()
+                player.play()
+                status = "Loading $queueCount tracks…"
+            } else {
+                player.addMediaItems(mediaItems)
+                queueCount = player.mediaItemCount
+                status = "Added ${mediaItems.size} tracks · ${queueCount} total"
+            }
         }
     }
 
@@ -754,7 +763,8 @@ private fun ProDspScreen() {
                                         fontSize = 8.sp
                                     )
                                 }
-                                OutlinedButton(onClick = { picker.launch(arrayOf("audio/*")) }) { Text("ADD", fontSize = 9.sp) }
+                                OutlinedButton(onClick = { replaceQueueOnPick = false; picker.launch(arrayOf("audio/*")) }) { Text("ADD TRACKS", fontSize = 8.sp) }
+                                OutlinedButton(onClick = { replaceQueueOnPick = true; picker.launch(arrayOf("audio/*")) }) { Text("NEW QUEUE", fontSize = 8.sp) }
                             }
                             OutlinedButton(onClick = { for (i in 0 until 31) gains[i] = 0f; syncGains() }) { Text("RESET EQUALIZER") }
                             Text("Processing is currently applied to this app's local player, not system-wide audio.", color = Muted, fontSize = 10.sp)
