@@ -62,7 +62,8 @@ private data class ParametricBackup(
     val gainsDb: FloatArray,
     val frequencies: FloatArray,
     val qValues: FloatArray,
-    val filterTypes: Array<BiquadFilterType>
+    val filterTypes: Array<BiquadFilterType>,
+    val bandEnabled: BooleanArray
 )
 
 class MainActivity : ComponentActivity() {
@@ -127,6 +128,7 @@ private fun ProDspScreen() {
     } }
     val bandQs = remember { mutableStateListOf<Float>().apply { repeat(31) { add(1f) } } }
     val bandTypes = remember { mutableStateListOf<BiquadFilterType>().apply { repeat(31) { add(BiquadFilterType.PEAK) } } }
+    val bandEnabled = remember { mutableStateListOf<Boolean>().apply { repeat(31) { add(true) } } }
     var showFilterMenu by remember { mutableStateOf(false) }
     var preamp by remember { mutableFloatStateOf(0f) }
     var lowTone by remember { mutableFloatStateOf(0f) }
@@ -312,6 +314,7 @@ private fun ProDspScreen() {
         val oldGains = FloatArray(oldCount) { gains[it] }
         val oldQs = FloatArray(oldCount) { bandQs[it] }
         val oldTypes = (0 until oldCount).map { bandTypes[it] }
+        val oldEnabled = (0 until oldCount).map { bandEnabled[it] }
         val nextFrequencies = EqBandLayout.frequencies(safeCount, maxHz = maxBandFrequencyHz)
         val nextGains = EqBandLayout.resampleGains(oldFrequencies, oldGains, nextFrequencies)
         val nextQs = EqBandLayout.resampleNearest(oldFrequencies, oldQs, nextFrequencies)
@@ -325,6 +328,8 @@ private fun ProDspScreen() {
                 gains[index] = nextGains[index].coerceIn(-15f, 15f)
                 bandQs[index] = nextQs[index].coerceIn(0.3f, 8f)
                 bandTypes[index] = oldTypes[nearestOldIndices[index]]
+                bandEnabled[index] = oldEnabled[nearestOldIndices[index]]
+                dsp.setBandEnabled(index, bandEnabled[index])
                 dsp.setBandFrequency(index, frequencies[index])
                 dsp.setBandQ(index, bandQs[index])
                 dsp.setBandType(index, bandTypes[index])
@@ -345,7 +350,8 @@ private fun ProDspScreen() {
                 FloatArray(bandCount) { gains[it] },
                 FloatArray(bandCount) { frequencies[it] },
                 FloatArray(bandCount) { bandQs[it] },
-                Array(bandCount) { bandTypes[it] }
+                Array(bandCount) { bandTypes[it] },
+                BooleanArray(bandCount) { bandEnabled[it] }
             )
             val graphicFrequencies = EqBandLayout.frequencies(bandCount, maxHz = maxBandFrequencyHz)
             for (index in 0 until bandCount) {
@@ -369,6 +375,8 @@ private fun ProDspScreen() {
                     frequencies[index] = targetFrequencies[index]
                     bandQs[index] = saved.qValues[nearest[index]].coerceIn(0.3f, 8f)
                     bandTypes[index] = saved.filterTypes[nearest[index]]
+                    bandEnabled[index] = saved.bandEnabled[nearest[index]]
+                    dsp.setBandEnabled(index, bandEnabled[index])
                     dsp.setBandGain(index, gains[index])
                     dsp.setBandFrequency(index, frequencies[index])
                     dsp.setBandQ(index, bandQs[index])
@@ -410,6 +418,7 @@ private fun ProDspScreen() {
             .put("frequencies", JSONArray(frequencies.toList()))
             .put("qs", JSONArray(bandQs.toList()))
             .put("types", JSONArray(bandTypes.map { it.name }))
+            .put("bandEnabled", JSONArray(bandEnabled.toList()))
             .put("preamp", preamp)
             .put("lowTone", lowTone)
             .put("highTone", highTone)
@@ -448,6 +457,7 @@ private fun ProDspScreen() {
             val savedFrequencies = data.optJSONArray("frequencies") ?: JSONArray()
             val savedQs = data.optJSONArray("qs") ?: JSONArray()
             val savedTypes = data.optJSONArray("types") ?: JSONArray()
+            val savedBandEnabled = data.optJSONArray("bandEnabled") ?: JSONArray()
             for (i in 0 until 31) {
                 gains[i] = savedGains.optDouble(i, 0.0).toFloat()
                 frequencies[i] = savedFrequencies.optDouble(i, bandFrequency(i, bandCount).toDouble()).toFloat()
@@ -455,6 +465,8 @@ private fun ProDspScreen() {
                 bandTypes[i] = runCatching {
                     BiquadFilterType.valueOf(savedTypes.optString(i, "PEAK"))
                 }.getOrDefault(BiquadFilterType.PEAK)
+                bandEnabled[i] = savedBandEnabled.optBoolean(i, true)
+                dsp.setBandEnabled(i, bandEnabled[i])
                 dsp.setBandFrequency(i, frequencies[i])
                 dsp.setBandQ(i, bandQs[i])
                 dsp.setBandType(i, bandTypes[i])
