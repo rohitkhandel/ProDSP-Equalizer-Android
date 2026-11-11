@@ -89,6 +89,8 @@ private fun ProDspScreen() {
     var spectrum by remember { mutableStateOf(FloatArray(48)) }
     var sampleRateHz by remember { mutableIntStateOf(48_000) }
     var playing by remember { mutableStateOf(false) }
+    var shuffleEnabled by remember { mutableStateOf(false) }
+    var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
     var dspOn by remember { mutableStateOf(true) }
     var peakGuard by remember { mutableStateOf(true) }
     var compressorOn by remember { mutableStateOf(false) }
@@ -220,6 +222,12 @@ private fun ProDspScreen() {
                 val uri = mediaItem?.localConfiguration?.uri
                 if (uri != null) trackName = queryDisplayName(context, uri)
                 currentPositionMs = 0L
+            }
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                shuffleEnabled = shuffleModeEnabled
+            }
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                this@ProDspScreen.repeatMode = repeatMode
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 status = "Playback error: ${error.errorCodeName}"
@@ -726,7 +734,27 @@ private fun ProDspScreen() {
                                     enabled = player.hasNextMediaItem()
                                 ) { Text("NEXT", fontSize = 9.sp) }
                                 Spacer(Modifier.weight(1f))
-                                OutlinedButton(onClick = { picker.launch(arrayOf("audio/*")) }) { Text("ADD TRACKS", fontSize = 9.sp) }
+                                TextButton(onClick = { player.shuffleModeEnabled = !shuffleEnabled }) {
+                                    Text(if (shuffleEnabled) "SHUFFLE ON" else "SHUFFLE", color = if (shuffleEnabled) Accent else Muted, fontSize = 8.sp)
+                                }
+                                TextButton(onClick = {
+                                    player.repeatMode = when (repeatMode) {
+                                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                                        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                                        else -> Player.REPEAT_MODE_OFF
+                                    }
+                                }) {
+                                    Text(
+                                        when (repeatMode) {
+                                            Player.REPEAT_MODE_ALL -> "REPEAT ALL"
+                                            Player.REPEAT_MODE_ONE -> "REPEAT ONE"
+                                            else -> "REPEAT OFF"
+                                        },
+                                        color = if (repeatMode == Player.REPEAT_MODE_OFF) Muted else Accent,
+                                        fontSize = 8.sp
+                                    )
+                                }
+                                OutlinedButton(onClick = { picker.launch(arrayOf("audio/*")) }) { Text("ADD", fontSize = 9.sp) }
                             }
                             OutlinedButton(onClick = { for (i in 0 until 31) gains[i] = 0f; syncGains() }) { Text("RESET EQUALIZER") }
                             Text("Processing is currently applied to this app's local player, not system-wide audio.", color = Muted, fontSize = 10.sp)
