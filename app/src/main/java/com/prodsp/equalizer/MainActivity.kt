@@ -555,6 +555,38 @@ private fun ProDspScreen() {
             }.coerceIn(-15f, 15f)
         }
         for (i in 0 until 31) gains[i] = values[i]
+        for (i in 0 until bandCount) {
+            bandEnabled[i] = true
+            dsp.setBandEnabled(i, true)
+        }
+        soloBandIndex = -1
+        dsp.setSoloBand(-1)
+        syncGains()
+    }
+
+    fun resetEqualizer() {
+        val defaultFrequencies = EqBandLayout.frequencies(bandCount, maxHz = maxBandFrequencyHz)
+        for (index in 0 until EqBandLayout.MAX_BANDS) {
+            gains[index] = 0f
+            bandQs[index] = 1f
+            bandTypes[index] = BiquadFilterType.PEAK
+            bandEnabled[index] = true
+            if (index < bandCount) frequencies[index] = defaultFrequencies[index]
+        }
+        dsp.configureBands(bandCount)
+        for (index in 0 until bandCount) {
+            dsp.setBandGain(index, 0f)
+            dsp.setBandFrequency(index, frequencies[index])
+            dsp.setBandQ(index, 1f)
+            dsp.setBandType(index, BiquadFilterType.PEAK)
+            dsp.setBandEnabled(index, true)
+        }
+        preamp = 0f
+        dsp.setPreamp(0f)
+        soloBandIndex = -1
+        dsp.setSoloBand(-1)
+        parametricBackup = null
+        selectedBand = 0
         syncGains()
     }
 
@@ -912,7 +944,7 @@ private fun ProDspScreen() {
                                 OutlinedButton(onClick = { replaceQueueOnPick = false; picker.launch(arrayOf("audio/*")) }) { Text("ADD TRACKS", fontSize = 8.sp) }
                                 OutlinedButton(onClick = { replaceQueueOnPick = true; picker.launch(arrayOf("audio/*")) }) { Text("NEW QUEUE", fontSize = 8.sp) }
                             }
-                            OutlinedButton(onClick = { for (i in 0 until 31) gains[i] = 0f; syncGains() }) { Text("RESET EQUALIZER") }
+                            OutlinedButton(onClick = { resetEqualizer() }) { Text("RESET EQUALIZER") }
                             Text("Processing is currently applied to this app's local player, not system-wide audio.", color = Muted, fontSize = 10.sp)
                         }
                     }
