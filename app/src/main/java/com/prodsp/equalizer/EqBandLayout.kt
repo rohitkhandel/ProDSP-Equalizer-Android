@@ -33,8 +33,12 @@ internal object EqBandLayout {
         }
     }
 
-    fun frequencyAt(index: Int, count: Int): Float {
-        val layout = frequencies(count)
+    fun frequencyAt(
+        index: Int,
+        count: Int,
+        maxHz: Float = MAX_FREQUENCY_HZ
+    ): Float {
+        val layout = frequencies(count, maxHz = maxHz)
         return layout[index.coerceIn(layout.indices)]
     }
 
