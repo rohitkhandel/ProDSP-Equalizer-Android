@@ -91,6 +91,41 @@ private data class EqCompareSlot(
     val soloBandIndex: Int
 )
 
+private fun readParametricBackup(preferences: android.content.SharedPreferences): ParametricBackup? {
+    val raw = preferences.getString("parametric_backup", null) ?: return null
+    return runCatching {
+        val json = JSONObject(raw)
+        val gains = json.optJSONArray("gains") ?: JSONArray()
+        val frequencies = json.optJSONArray("frequencies") ?: JSONArray()
+        val qs = json.optJSONArray("qs") ?: JSONArray()
+        val types = json.optJSONArray("types") ?: JSONArray()
+        val enabled = json.optJSONArray("enabled") ?: JSONArray()
+        val count = minOf(gains.length(), frequencies.length(), qs.length())
+        require(count > 0) { "Empty parametric backup" }
+        ParametricBackup(
+            gainsDb = FloatArray(count) { gains.optDouble(it, 0.0).toFloat() },
+            frequencies = FloatArray(count) { frequencies.optDouble(it, 1_000.0).toFloat() },
+            qValues = FloatArray(count) { qs.optDouble(it, 1.0).toFloat() },
+            filterTypes = Array(count) {
+                runCatching { BiquadFilterType.valueOf(types.optString(it, "PEAK")) }
+                    .getOrDefault(BiquadFilterType.PEAK)
+            },
+            bandEnabled = BooleanArray(count) { enabled.optBoolean(it, true) }
+        )
+    }.getOrNull()
+}
+
+private fun writeParametricBackup(preferences: android.content.SharedPreferences, backup: ParametricBackup) {
+    val json = JSONObject()
+        .put("gains", JSONArray(backup.gainsDb.toList()))
+        .put("frequencies", JSONArray(backup.frequencies.toList()))
+        .put("qs", JSONArray(backup.qValues.toList()))
+        .put("types", JSONArray(backup.filterTypes.map { it.name }))
+        .put("enabled", JSONArray(backup.bandEnabled.toList()))
+    preferences.edit().putString("parametric_backup", json.toString()).apply()
+}
+
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -188,7 +223,7 @@ private fun ProDspContent(player: MediaController) {
     var limiterRelease by remember(dsp) { mutableFloatStateOf(initialDsp.limiterReleaseMs) }
     var bandCount by remember(dsp) { mutableIntStateOf(initialDsp.bandCount) }
     var parametricMode by remember { mutableStateOf(preferences.getBoolean("parametric_mode", false)) }
-    var parametricBackup by remember { mutableStateOf<ParametricBackup?>(null) }
+    var parametricBackup by remember { mutableStateOf(readParametricBackup(preferences)) }
     var selectedBand by remember { mutableIntStateOf(0) }
     var soloBandIndex by remember(dsp) { mutableIntStateOf(initialDsp.soloBandIndex) }
     var activeAbSlot by remember { mutableIntStateOf(0) }
@@ -434,6 +469,7 @@ private fun ProDspContent(player: MediaController) {
                 Array(bandCount) { bandTypes[it] },
                 BooleanArray(bandCount) { bandEnabled[it] }
             )
+            parametricBackup?.let { writeParametricBackup(preferences, it) }
             val graphicFrequencies = EqBandLayout.frequencies(bandCount, maxHz = maxBandFrequencyHz)
             for (index in 0 until bandCount) {
                 frequencies[index] = graphicFrequencies[index]
@@ -464,6 +500,8 @@ private fun ProDspContent(player: MediaController) {
                     dsp.setBandType(index, bandTypes[index])
                 }
             }
+            preferences.edit().remove("parametric_backup").apply()
+            parametricBackup = null
         }
         parametricMode = enabled
         preferences.edit().putBoolean("parametric_mode", enabled).apply()
@@ -620,6 +658,7 @@ private fun ProDspContent(player: MediaController) {
             val data = JSONObject(raw)
             bandCount = data.optInt("bandCount", 10).coerceIn(1, 31)
             parametricMode = data.optBoolean("parametricMode", false)
+            preferences.edit().putBoolean("parametric_mode", parametricMode).remove("parametric_backup").apply()
             parametricBackup = null
             soloBandIndex = -1
             dsp.setSoloBand(-1)
@@ -754,6 +793,7 @@ private fun ProDspContent(player: MediaController) {
         soloBandIndex = -1
         dsp.setSoloBand(-1)
         parametricBackup = null
+        preferences.edit().remove("parametric_backup").apply()
         selectedBand = 0
         syncGains()
     }
