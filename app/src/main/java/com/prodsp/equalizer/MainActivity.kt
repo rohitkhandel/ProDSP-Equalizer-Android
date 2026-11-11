@@ -979,6 +979,14 @@ private fun ProDspFader(value: Float, min: Float, max: Float, modifier: Modifier
         val bottom = size.height - 8.dp.toPx()
         val zeroY = bottom - ((0f - min) / (max - min)) * (bottom - top)
         val y = bottom - ((value - min) / (max - min)) * (bottom - top)
+        for (tick in 0..12) {
+            val tickY = top + (bottom - top) * tick / 12f
+            val isZero = kotlin.math.abs(tickY - zeroY) < 1f
+            val tickHalfWidth = if (isZero) 7.dp.toPx() else 3.dp.toPx()
+            val tickColor = if (isZero) Color(0xFF9AA4AF) else Color(0xFF48515B).copy(alpha = 0.7f)
+            drawLine(tickColor, Offset(centerX - tickHalfWidth - 3.dp.toPx(), tickY), Offset(centerX - 3.dp.toPx(), tickY), 1.dp.toPx())
+            drawLine(tickColor, Offset(centerX + 3.dp.toPx(), tickY), Offset(centerX + tickHalfWidth + 3.dp.toPx(), tickY), 1.dp.toPx())
+        }
         drawLine(Color(0xFF343A40), Offset(centerX, top), Offset(centerX, bottom), 3.dp.toPx(), cap = StrokeCap.Round)
         drawLine(accent.copy(alpha = 0.22f), Offset(centerX, zeroY), Offset(centerX, y), 10.dp.toPx(), cap = StrokeCap.Round)
         drawLine(accent, Offset(centerX, zeroY), Offset(centerX, y), 3.dp.toPx(), cap = StrokeCap.Round)
