@@ -26,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -1270,11 +1271,35 @@ private fun FrequencyResponseGraph(
         }
 
         val curve = Path()
+        val fill = Path()
+        val zeroLine = yFor(0f)
+        fill.moveTo(left, zeroLine)
         curveValues.forEachIndexed { point, db ->
             val x = left + (point / 220f) * graphWidth
             val y = yFor(db)
-            if (point == 0) curve.moveTo(x, y) else curve.lineTo(x, y)
+            if (point == 0) {
+                curve.moveTo(x, y)
+                fill.lineTo(x, y)
+            } else {
+                curve.lineTo(x, y)
+                fill.lineTo(x, y)
+            }
         }
+        fill.lineTo(right, zeroLine)
+        fill.close()
+        drawPath(
+            fill,
+            brush = Brush.verticalGradient(
+                colors = listOf(Accent.copy(alpha = 0.23f), Accent.copy(alpha = 0.015f)),
+                startY = top,
+                endY = bottom
+            )
+        )
+        drawPath(
+            curve,
+            color = if (enabled) Accent.copy(alpha = 0.28f) else Muted.copy(alpha = 0.22f),
+            style = Stroke(width = 7.dp.toPx())
+        )
         drawPath(
             curve,
             color = if (enabled) Accent else Muted,
