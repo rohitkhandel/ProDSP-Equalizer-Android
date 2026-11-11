@@ -21,8 +21,6 @@ import kotlin.math.sqrt
  */
 class ParametricDspProcessor : BaseAudioProcessor() {
     companion object {
-        private const val MIN_HZ = 20f
-        private const val MAX_HZ = 20_000f
     }
 
     @Volatile private var bandCount = 10
@@ -359,10 +357,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         output.flip()
     }
 
-    private fun defaultFrequency(index: Int, count: Int): Float {
-        if (count <= 1) return 1000f
-        return (MIN_HZ * (MAX_HZ / MIN_HZ).pow(index.toFloat() / (count - 1))).coerceIn(MIN_HZ, MAX_HZ)
-    }
+    private fun defaultFrequency(index: Int, count: Int): Float =
+        EqBandLayout.frequencyAt(index, count)
 
     private fun softLimit(x: Float): Float {
         val magnitude = abs(x)
