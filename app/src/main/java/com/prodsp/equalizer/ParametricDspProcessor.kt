@@ -7,21 +7,18 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.exp
-import kotlin.math.ln
 import kotlin.math.pow
-import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Real PCM parametric equalizer for ProDSP's Media3 playback path.
- * 31 logarithmically spaced peaking filters, per-channel state, coefficient
- * smoothing, preamp and a final peak guard. Processing stays on the audio thread.
+ * Real-time PCM DSP processor for ProDSP's Media3 playback path.
+ *
+ * The engine supports 31 second-order bands, linked per-channel filter state,
+ * Graphic/Parametric editing, RBJ filter modes, smooth coefficient changes,
+ * preamp, stereo image processing and dynamics.
  */
 class ParametricDspProcessor : BaseAudioProcessor() {
-    companion object {
-    }
 
     @Volatile private var bandCount = 10
     @Volatile private var gainsDb = FloatArray(31)
