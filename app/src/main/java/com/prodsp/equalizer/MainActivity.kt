@@ -651,7 +651,7 @@ private fun ProDspScreen() {
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("FREQUENCY RESPONSE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Text("LIVE", color = SpectrumGreen, fontSize = 9.sp)
+                                Text("DRAG NODES TO EDIT", color = SpectrumGreen, fontSize = 8.sp)
                             }
                             FrequencyResponseGraph(
                                 frequencies = frequencies,
