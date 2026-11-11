@@ -29,7 +29,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
 
     @Volatile private var bandCount = 10
     @Volatile private var gainsDb = FloatArray(31)
-    @Volatile private var qValue = 1.0f
+    @Volatile private var qValues = FloatArray(31) { 1.0f }
+    @Volatile private var centerFrequencies = FloatArray(31) { i -> defaultFrequency(i, 31) }
     @Volatile private var preampDb = 0f
     @Volatile private var enabled = true
     @Volatile private var peakGuard = true
@@ -39,11 +40,15 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     private var filters = emptyArray<Filter>()
     private var transitionRemaining = 0
 
-    data class Snapshot(val bandCount: Int, val gainsDb: FloatArray, val q: Float, val preampDb: Float, val enabled: Boolean, val peakGuard: Boolean)
+    data class Snapshot(val bandCount: Int, val gainsDb: FloatArray, val centerFrequencies: FloatArray, val qValues: FloatArray, val preampDb: Float, val enabled: Boolean, val peakGuard: Boolean)
+
+    @Synchronized fun bandFrequency(index: Int): Float = centerFrequencies.getOrElse(index) { 1000f }
+    @Synchronized fun bandQ(index: Int): Float = qValues.getOrElse(index) { 1f }
 
     @Synchronized fun configureBands(count: Int) {
         bandCount = BAND_COUNTS.minBy { abs(it - count) }
-        gainsDb = gainsDb.copyOf()
+        centerFrequencies = FloatArray(31) { i -> defaultFrequency(i, bandCount) }
+        updateTargets()
     }
 
     @Synchronized fun setBandGain(index: Int, gainDb: Float) {
@@ -61,15 +66,26 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         updateTargets()
     }
 
-    @Synchronized fun setQ(value: Float) {
-        qValue = value.coerceIn(0.3f, 4f)
+    @Synchronized fun setBandFrequency(index: Int, frequencyHz: Float) {
+        if (index !in 0 until bandCount) return
+        val copy = centerFrequencies.copyOf()
+        copy[index] = frequencyHz.coerceIn(20f, minOf(20_000f, sampleRate.takeIf { it > 0 }?.times(0.475f) ?: 20_000f))
+        centerFrequencies = copy
+        updateTargets()
+    }
+
+    @Synchronized fun setBandQ(index: Int, value: Float) {
+        if (index !in 0 until bandCount) return
+        val copy = qValues.copyOf()
+        copy[index] = value.coerceIn(0.3f, 8f)
+        qValues = copy
         updateTargets()
     }
 
     fun setPreamp(valueDb: Float) { preampDb = valueDb.coerceIn(-12f, 6f) }
     fun setEnabled(value: Boolean) { enabled = value }
     fun setPeakGuard(value: Boolean) { peakGuard = value }
-    fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), qValue, preampDb, enabled, peakGuard)
+    @Synchronized fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), centerFrequencies.copyOf(), qValues.copyOf(), preampDb, enabled, peakGuard)
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT ||
@@ -89,11 +105,12 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         if (sampleRate <= 0 || filters.isEmpty()) return
         val count = bandCount
         val gains = gainsDb.copyOf()
-        val q = qValue
+        val frequencies = centerFrequencies.copyOf()
+        val qs = qValues.copyOf()
         for (i in 0 until 31) {
-            val frequency = frequencyFor(i, count)
+            val frequency = frequencies[i].coerceIn(20f, sampleRate * 0.475f)
             val gain = if (i < count) gains[i] else 0f
-            filters[i].setTarget(peakingCoefficients(sampleRate, frequency, q, gain))
+            filters[i].setTarget(peakingCoefficients(sampleRate, frequency, qs[i], gain))
         }
         transitionRemaining = TRANSITION_SAMPLES
     }
@@ -129,9 +146,9 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         output.flip()
     }
 
-    private fun frequencyFor(index: Int, count: Int): Float {
+    private fun defaultFrequency(index: Int, count: Int): Float {
         if (count <= 1) return 1000f
-        return (MIN_HZ * (MAX_HZ / MIN_HZ).pow(index.toFloat() / (count - 1))).coerceIn(20f, sampleRate * 0.475f)
+        return (MIN_HZ * (MAX_HZ / MIN_HZ).pow(index.toFloat() / (count - 1))).coerceIn(MIN_HZ, MAX_HZ)
     }
 
     private fun peakingCoefficients(rate: Int, frequency: Float, q: Float, gainDb: Float): Coefficients {
