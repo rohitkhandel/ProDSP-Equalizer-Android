@@ -62,6 +62,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     private var lowShelfFilter: Filter? = null
     private var highShelfFilter: Filter? = null
     @Volatile private var transitionRemaining = 0
+    private var enabledMix = 1f
 
     data class Snapshot(val bandCount: Int, val gainsDb: FloatArray, val centerFrequencies: FloatArray, val qValues: FloatArray, val preampDb: Float, val enabled: Boolean, val peakGuard: Boolean)
 
@@ -242,7 +243,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         if (bytes <= 0) return
         val output = replaceOutputBuffer(bytes).order(ByteOrder.LITTLE_ENDIAN)
         val input = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
-        val active = enabled
+        val targetEqMix = if (enabled) 1f else 0f
+        val eqMixStep = if (sampleRate > 0) 1f / (sampleRate * 0.01f) else 1f
         val gain = 10.0.pow((preampDb / 20.0).toDouble()).toFloat()
         val protect = peakGuard
         val useCompressor = compressorEnabled
@@ -256,20 +258,21 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val frame = frameScratch
 
         while (input.remaining() >= 2 * channelCount) {
-            if (active) {
-                lowShelfFilter?.advance(transitionRemaining)
-                for (band in 0 until bandCount) filters[band].advance(transitionRemaining)
-                highShelfFilter?.advance(transitionRemaining)
-            }
+            // Keep filter state warm even while bypassed, then blend the
+            // processed and dry signals over 10 ms to avoid abrupt switching.
+            lowShelfFilter?.advance(transitionRemaining)
+            for (band in 0 until bandCount) filters[band].advance(transitionRemaining)
+            highShelfFilter?.advance(transitionRemaining)
+            enabledMix += (targetEqMix - enabledMix).coerceIn(-eqMixStep, eqMixStep)
+
             var framePeak = 0f
             for (channel in 0 until channelCount) {
-                var sample = input.short.toInt() / 32768f
-                if (active) {
-                    sample = lowShelfFilter?.process(sample, channel) ?: sample
-                    for (band in 0 until bandCount) sample = filters[band].process(sample, channel)
-                    sample = highShelfFilter?.process(sample, channel) ?: sample
-                    sample *= gain
-                }
+                val drySample = input.short.toInt() / 32768f
+                var wetSample = lowShelfFilter?.process(drySample, channel) ?: drySample
+                for (band in 0 until bandCount) wetSample = filters[band].process(wetSample, channel)
+                wetSample = highShelfFilter?.process(wetSample, channel) ?: wetSample
+                wetSample *= gain
+                val sample = drySample + (wetSample - drySample) * enabledMix
                 frame[channel] = sample
                 framePeak = maxOf(framePeak, abs(sample))
             }
@@ -369,6 +372,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     override fun onFlush() {
         compressorEnvelope = 0f
         compressorGain = 1f
+        enabledMix = if (enabled) 1f else 0f
         fftWriteIndex = 0
         spectrumBands = FloatArray(48)
         filters.forEach { it.clearState() }
