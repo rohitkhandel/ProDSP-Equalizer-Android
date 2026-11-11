@@ -18,4 +18,11 @@ object StereoWidthMath {
         val side = (left - right) * 0.5f
         return mid - side * width
     }
+
+    /** Attenuates only the opposite channel, without boosting the chosen side. */
+    fun leftBalanceGain(balancePercent: Float): Float =
+        if (balancePercent > 0f) 1f - balancePercent.coerceIn(0f, 100f) / 100f else 1f
+
+    fun rightBalanceGain(balancePercent: Float): Float =
+        if (balancePercent < 0f) 1f + balancePercent.coerceIn(-100f, 0f) / 100f else 1f
 }
