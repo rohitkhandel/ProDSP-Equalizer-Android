@@ -1512,12 +1512,13 @@ private fun FrequencyResponseGraph(
             FloatArray(221) { point ->
                 val fraction = point / 220f
                 val hz = 20f * (maxHz / 20f).pow(fraction)
+                val responsePoint = BiquadMath.frequencyPoint(hz, sampleRateHz)
                 var totalDb = 0f
                 for (coefficients in bandCoefficients) {
-                    totalDb += BiquadMath.magnitudeDb(coefficients, hz, sampleRateHz)
+                    totalDb += BiquadMath.magnitudeDb(coefficients, responsePoint)
                 }
-                totalDb += BiquadMath.magnitudeDb(lowShelf, hz, sampleRateHz)
-                totalDb += BiquadMath.magnitudeDb(highShelf, hz, sampleRateHz)
+                totalDb += BiquadMath.magnitudeDb(lowShelf, responsePoint)
+                totalDb += BiquadMath.magnitudeDb(highShelf, responsePoint)
                 totalDb - autoHeadroomDb
             }
         }
