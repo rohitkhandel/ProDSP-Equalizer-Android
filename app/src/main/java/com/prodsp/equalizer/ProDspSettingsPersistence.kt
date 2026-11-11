@@ -52,7 +52,7 @@ object ProDspSettingsPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_STATE, state.toString())
-            .commit()
+            .apply()
     }
 
     fun restore(context: Context): Boolean {

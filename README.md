@@ -11,13 +11,15 @@ ProDSP is an Android-local music player and parametric EQ project.
 - Low- and high-shelf tone controls.
 - Preamp, compressor, output limiter and peak guard.
 - 48-band spectrum display using a 2048-point FFT.
-- Preset storage on the device.
+- Named preset storage with import/export.
+- Automatic, debounced persistence of the active DSP settings.
+- Foreground MediaSession playback service with lock-screen and notification controls.
 
 ## Important limitations
 
 This project is not yet feature-equivalent to Poweramp Equalizer. The current application is an in-app player/equalizer, not a universal system-wide effect. Processing of Spotify, YouTube Music and other third-party players is not guaranteed. Android audio effects vary by device and audio route.
 
-The PCM processor currently accepts PCM16 mono/stereo output. A production-grade release still needs broader format/device validation, DSP response tests, a more complete player/media-session experience, robust preset import/export, advanced filter types, channel controls and device-level testing.
+The PCM processor currently accepts PCM16 mono/stereo output. Playback is owned by a MediaSession service and can continue while the UI is backgrounded. The app still needs broader format/device validation, more extensive listening tests, independent channel EQ and device-level testing. Third-party player/system-wide processing is not currently guaranteed.
 
 ## Build and verification
 

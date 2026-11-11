@@ -7,6 +7,12 @@ package com.prodsp.equalizer
  * platform effects remain the single source of truth for live DSP controls.
  */
 object ProDspAudioEngine {
+    @Volatile var settingsChangedListener: (() -> Unit)? = null
+
+    fun notifySettingsChanged() {
+        settingsChangedListener?.invoke()
+    }
+
     val processor: ParametricDspProcessor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         ParametricDspProcessor()
     }

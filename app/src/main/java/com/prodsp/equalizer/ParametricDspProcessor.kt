@@ -187,25 +187,25 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         updateTargets()
     }
 
-    fun setPreamp(valueDb: Float) { preampDb = valueDb.coerceIn(-12f, 6f) }
+    fun setPreamp(valueDb: Float) { preampDb = valueDb.coerceIn(-12f, 6f); ProDspAudioEngine.notifySettingsChanged() }
     @Synchronized fun setAutoHeadroom(enabled: Boolean) {
         autoHeadroomEnabled = enabled
         updateTargets()
     }
     fun currentAutoHeadroomDb(): Float = automaticHeadroomDb
-    fun setEnabled(value: Boolean) { enabled = value }
-    fun setPeakGuard(value: Boolean) { peakGuard = value }
-    fun setCompressorEnabled(value: Boolean) { compressorEnabled = value }
-    fun setCompressorThreshold(valueDb: Float) { compressorThresholdDb = valueDb.coerceIn(-36f, 0f) }
-    fun setCompressorRatio(value: Float) { compressorRatio = value.coerceIn(1f, 20f) }
-    fun setCompressorAttack(valueMs: Float) { compressorAttackMs = valueMs.coerceIn(1f, 100f) }
-    fun setCompressorRelease(valueMs: Float) { compressorReleaseMs = valueMs.coerceIn(10f, 1000f) }
-    fun setCompressorMakeup(valueDb: Float) { compressorMakeupDb = valueDb.coerceIn(0f, 12f) }
-    fun setLimiterEnabled(value: Boolean) { limiterEnabled = value }
-    fun setLimiterCeiling(valueDb: Float) { limiterCeilingDb = valueDb.coerceIn(-12f, 0f) }
-    fun setLimiterRelease(valueMs: Float) { limiterReleaseMs = valueMs.coerceIn(10f, 500f) }
-    fun setStereoWidth(percent: Float) { stereoWidth = percent.coerceIn(0f, 200f) / 100f }
-    fun setStereoBalance(percent: Float) { stereoBalance = percent.coerceIn(-100f, 100f) }
+    fun setEnabled(value: Boolean) { enabled = value; ProDspAudioEngine.notifySettingsChanged() }
+    fun setPeakGuard(value: Boolean) { peakGuard = value; ProDspAudioEngine.notifySettingsChanged() }
+    fun setCompressorEnabled(value: Boolean) { compressorEnabled = value; ProDspAudioEngine.notifySettingsChanged() }
+    fun setCompressorThreshold(valueDb: Float) { compressorThresholdDb = valueDb.coerceIn(-36f, 0f); ProDspAudioEngine.notifySettingsChanged() }
+    fun setCompressorRatio(value: Float) { compressorRatio = value.coerceIn(1f, 20f); ProDspAudioEngine.notifySettingsChanged() }
+    fun setCompressorAttack(valueMs: Float) { compressorAttackMs = valueMs.coerceIn(1f, 100f); ProDspAudioEngine.notifySettingsChanged() }
+    fun setCompressorRelease(valueMs: Float) { compressorReleaseMs = valueMs.coerceIn(10f, 1000f); ProDspAudioEngine.notifySettingsChanged() }
+    fun setCompressorMakeup(valueDb: Float) { compressorMakeupDb = valueDb.coerceIn(0f, 12f); ProDspAudioEngine.notifySettingsChanged() }
+    fun setLimiterEnabled(value: Boolean) { limiterEnabled = value; ProDspAudioEngine.notifySettingsChanged() }
+    fun setLimiterCeiling(valueDb: Float) { limiterCeilingDb = valueDb.coerceIn(-12f, 0f); ProDspAudioEngine.notifySettingsChanged() }
+    fun setLimiterRelease(valueMs: Float) { limiterReleaseMs = valueMs.coerceIn(10f, 500f); ProDspAudioEngine.notifySettingsChanged() }
+    fun setStereoWidth(percent: Float) { stereoWidth = percent.coerceIn(0f, 200f) / 100f; ProDspAudioEngine.notifySettingsChanged() }
+    fun setStereoBalance(percent: Float) { stereoBalance = percent.coerceIn(-100f, 100f); ProDspAudioEngine.notifySettingsChanged() }
     @Synchronized fun snapshot() = Snapshot(
         bandCount = bandCount,
         gainsDb = gainsDb.copyOf(),
@@ -356,7 +356,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     }
 
     @Synchronized private fun updateTargets() {
-        if (sampleRate <= 0 || filters.isEmpty()) return
+        if (sampleRate <= 0 || filters.isEmpty()) {
+            ProDspAudioEngine.notifySettingsChanged()
+            return
+        }
         val count = bandCount
         val gains = gainsDb.copyOf()
         val frequencies = centerFrequencies.copyOf()
@@ -396,6 +399,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             automaticHeadroomDb = 0f
         }
         transitionRemaining = (sampleRate * 0.02f).toInt().coerceAtLeast(1)
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {

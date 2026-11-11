@@ -26,8 +26,19 @@ class ProDspPlaybackService : MediaSessionService() {
         }
     }
 
+    private val persistenceHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val persistActiveSettings = Runnable {
+        ProDspSettingsPersistence.save(this)
+    }
+    private val settingsChangedListener: () -> Unit = {
+        persistenceHandler.removeCallbacks(persistActiveSettings)
+        persistenceHandler.postDelayed(persistActiveSettings, 500L)
+    }
+
     override fun onCreate() {
         super.onCreate()
+        ProDspSettingsPersistence.restore(this)
+        ProDspAudioEngine.settingsChangedListener = settingsChangedListener
 
         val exoPlayer = ExoPlayer.Builder(
             this,
@@ -53,6 +64,10 @@ class ProDspPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        persistenceHandler.removeCallbacks(persistActiveSettings)
+        persistActiveSettings.run()
+        ProDspAudioEngine.settingsChangedListener = null
+
         mediaSession?.release()
         mediaSession = null
 

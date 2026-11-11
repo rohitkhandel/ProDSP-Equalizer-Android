@@ -26,11 +26,13 @@ class AudioEffectsEngine {
     fun setBassStrength(value: Int) {
         bassStrength = value.coerceIn(0, 1000)
         try { bassBoost?.setStrength(bassStrength.toShort()) } catch (_: Exception) { }
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     fun setVirtualizerStrength(value: Int) {
         virtualizerStrength = value.coerceIn(0, 1000)
         try { virtualizer?.setStrength(virtualizerStrength.toShort()) } catch (_: Exception) { }
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     private fun applyStoredStrengths() {
@@ -42,6 +44,7 @@ class AudioEffectsEngine {
         effectsEnabled = enabled
         try { bassBoost?.enabled = enabled } catch (_: Exception) { }
         try { virtualizer?.enabled = enabled } catch (_: Exception) { }
+        ProDspAudioEngine.notifySettingsChanged()
     }
 
     fun release() {
