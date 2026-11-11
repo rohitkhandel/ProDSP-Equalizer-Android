@@ -427,6 +427,25 @@ private fun ProDspScreen() {
                 "Vocal" -> -1.5f + 5.5f * exp(-(((x - 0.58f) / 0.19f).let { it * it }))
                 "Treble" -> -1f + 6f * x
                 "Rock" -> 5f * sin((x * Math.PI * 2).toFloat())
+                "Classical" -> 2.5f * exp(-(((x - 0.08f) / 0.22f).let { it * it })) +
+                    2f * exp(-(((x - 0.92f) / 0.18f).let { it * it })) -
+                    1.5f * exp(-(((x - 0.52f) / 0.22f).let { it * it }))
+                "Dance" -> 8f * exp(-(((x - 0.05f) / 0.17f).let { it * it })) -
+                    2f * exp(-(((x - 0.48f) / 0.22f).let { it * it })) +
+                    5f * exp(-(((x - 0.94f) / 0.18f).let { it * it }))
+                "Jazz" -> 3f * exp(-(((x - 0.18f) / 0.2f).let { it * it })) +
+                    2f * exp(-(((x - 0.78f) / 0.22f).let { it * it })) -
+                    1.5f * exp(-(((x - 0.5f) / 0.24f).let { it * it }))
+                "Acoustic" -> 2f * (1f - x) +
+                    4f * exp(-(((x - 0.62f) / 0.18f).let { it * it })) - 1f
+                "Podcast" -> -6f * exp(-(((x - 0.04f) / 0.19f).let { it * it })) +
+                    4f * exp(-(((x - 0.55f) / 0.2f).let { it * it })) -
+                    4f * exp(-(((x - 0.98f) / 0.12f).let { it * it }))
+                "Electronic" -> 5f * exp(-(((x - 0.08f) / 0.2f).let { it * it })) +
+                    3f * exp(-(((x - 0.9f) / 0.2f).let { it * it })) -
+                    1f * exp(-(((x - 0.5f) / 0.24f).let { it * it }))
+                "Pop" -> 3f * exp(-(((x - 0.12f) / 0.2f).let { it * it })) +
+                    2.5f * exp(-(((x - 0.68f) / 0.24f).let { it * it }))
                 else -> 0f
             }.coerceIn(-15f, 15f)
         }
@@ -626,8 +645,12 @@ private fun ProDspScreen() {
                         Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("PRESETS & PLAYER", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
                             Text("QUICK PRESETS", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf("Flat", "Bass", "Vocal", "Treble", "Rock").forEach { name -> OutlinedButton(onClick = { applyPreset(name) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) { Text(name, fontSize = 10.sp) } }
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("Flat", "Bass", "Vocal", "Treble", "Rock", "Classical", "Dance", "Jazz", "Acoustic", "Podcast", "Electronic", "Pop").forEach { name ->
+                                    OutlinedButton(onClick = { applyPreset(name) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                                        Text(name, fontSize = 10.sp, maxLines = 1)
+                                    }
+                                }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text("CUSTOM PRESETS", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
