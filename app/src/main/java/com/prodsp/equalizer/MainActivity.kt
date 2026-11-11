@@ -83,6 +83,7 @@ private fun ProDspScreen() {
     var trackName by remember { mutableStateOf("No track selected") }
     var status by remember { mutableStateOf("Choose a music file to start") }
     var spectrum by remember { mutableStateOf(FloatArray(48)) }
+    var sampleRateHz by remember { mutableIntStateOf(48_000) }
     var playing by remember { mutableStateOf(false) }
     var dspOn by remember { mutableStateOf(true) }
     var peakGuard by remember { mutableStateOf(true) }
@@ -126,6 +127,7 @@ private fun ProDspScreen() {
     val pageTitles = listOf("EQUALIZER", "TONE", "DYNAMICS", "PRESETS")
     val pagerState = rememberPagerState(pageCount = { pageTitles.size })
     val pageScope = rememberCoroutineScope()
+    val maxBandFrequencyHz = minOf(20_000f, sampleRateHz * 0.475f).coerceAtLeast(20f)
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
@@ -180,6 +182,8 @@ private fun ProDspScreen() {
     LaunchedEffect(dsp) {
         while (true) {
             spectrum = dsp.spectrumSnapshot()
+            val activeRate = dsp.currentSampleRate()
+            if (sampleRateHz != activeRate) sampleRateHz = activeRate
             delay(33)
         }
     }
@@ -568,7 +572,7 @@ private fun ProDspScreen() {
                                     }
                                 }
                                 if (parametricMode) {
-                                    ProDspKnob("FREQ", frequencies[selectedBand], 20f, 20000f, "") { frequencies[selectedBand] = it; dsp.setBandFrequency(selectedBand, it) }
+                                    ProDspKnob("FREQ", frequencies[selectedBand], 20f, maxBandFrequencyHz, "") { frequencies[selectedBand] = it; dsp.setBandFrequency(selectedBand, it) }
                                     ProDspKnob("Q FACTOR", bandQs[selectedBand], 0.3f, 8f, "%.2f") { bandQs[selectedBand] = it; dsp.setBandQ(selectedBand, it) }
                                 } else {
                                     Column(Modifier.width(190.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -582,7 +586,7 @@ private fun ProDspScreen() {
                                 Text("FREQUENCY RESPONSE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text("LIVE", color = SpectrumGreen, fontSize = 9.sp)
                             }
-                            FrequencyResponseGraph(frequencies, gains, bandQs, bandTypes, bandCount, dspOn, lowTone, highTone, lowToneFrequency, highToneFrequency)
+                            FrequencyResponseGraph(frequencies, gains, bandQs, bandTypes, bandCount, dspOn, lowTone, highTone, lowToneFrequency, highToneFrequency, sampleRateHz)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("20 Hz", color = Muted, fontSize = 8.sp); Text("1 kHz", color = Muted, fontSize = 8.sp); Text("20 kHz", color = Muted, fontSize = 8.sp)
                             }
@@ -818,7 +822,8 @@ private fun FrequencyResponseGraph(
     lowToneDb: Float,
     highToneDb: Float,
     lowToneFrequencyHz: Float,
-    highToneFrequencyHz: Float
+    highToneFrequencyHz: Float,
+    sampleRateHz: Int
 ) {
     // Snapshot the EQ controls and cache the curve. The live spectrum updates
     // frequently; they should not force expensive biquad/trigonometric work.
@@ -828,33 +833,34 @@ private fun FrequencyResponseGraph(
     val qValues = qs.take(activeCount)
     val typeValues = types.take(activeCount)
     val curveValues = remember(
-        frequencyValues, gainValues, qValues, typeValues, enabled, lowToneDb, highToneDb, lowToneFrequencyHz, highToneFrequencyHz
+        frequencyValues, gainValues, qValues, typeValues, enabled, lowToneDb, highToneDb, lowToneFrequencyHz, highToneFrequencyHz, sampleRateHz
     ) {
         FloatArray(221) { point ->
             val fraction = point / 220f
-            val hz = 20f * 1000f.pow(fraction)
+            val maxHz = minOf(20_000f, sampleRateHz * 0.475f).coerceAtLeast(20f)
+            val hz = 20f * (maxHz / 20f).pow(fraction)
             if (!enabled) {
                 0f
             } else {
                 var totalDb = 0f
                 for (index in 0 until activeCount) {
                     val coefficients = BiquadMath.coefficients(
-                        48_000,
+                        sampleRateHz,
                         frequencyValues[index],
                         qValues[index],
                         gainValues[index],
                         typeValues[index]
                     )
-                    totalDb += BiquadMath.magnitudeDb(coefficients, hz, 48_000)
+                    totalDb += BiquadMath.magnitudeDb(coefficients, hz, sampleRateHz)
                 }
                 val lowShelf = BiquadMath.coefficients(
-                    48_000, lowToneFrequencyHz, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF
+                    sampleRateHz, lowToneFrequencyHz, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF
                 )
                 val highShelf = BiquadMath.coefficients(
-                    48_000, highToneFrequencyHz, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF
+                    sampleRateHz, highToneFrequencyHz, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF
                 )
-                totalDb += BiquadMath.magnitudeDb(lowShelf, hz, 48_000)
-                totalDb += BiquadMath.magnitudeDb(highShelf, hz, 48_000)
+                totalDb += BiquadMath.magnitudeDb(lowShelf, hz, sampleRateHz)
+                totalDb += BiquadMath.magnitudeDb(highShelf, hz, sampleRateHz)
                 totalDb
             }
         }
@@ -883,8 +889,9 @@ private fun FrequencyResponseGraph(
                 strokeWidth = if (db == 0f) 1.5f else 1f
             )
         }
-        listOf(20f, 100f, 1_000f, 10_000f, 20_000f).forEach { hz ->
-            val x = left + (ln(hz) - ln(20f)) / ln(1000f) * graphWidth
+        val graphMaxHz = minOf(20_000f, sampleRateHz * 0.475f).coerceAtLeast(20f)
+        (listOf(20f, 100f, 1_000f, 10_000f, graphMaxHz).distinct().filter { it <= graphMaxHz }).forEach { hz ->
+            val x = left + (ln(hz) - ln(20f)) / ln(graphMaxHz / 20f) * graphWidth
             drawLine(
                 Color(0xFF263139),
                 androidx.compose.ui.geometry.Offset(x, top),
