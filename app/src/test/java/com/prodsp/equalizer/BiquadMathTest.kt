@@ -17,6 +17,21 @@ class BiquadMathTest {
     }
 
     @Test
+    fun peakingGainRemainsCorrectAcrossCommonSampleRates() {
+        for (rate in listOf(22_050, 44_100, 48_000, 96_000)) {
+            val coefficients = BiquadMath.coefficients(
+                rate, 1_000f, 0.9f, 4.5f, BiquadFilterType.PEAK
+            )
+            assertEquals(
+                "Incorrect centre gain at $rate Hz",
+                4.5f,
+                BiquadMath.magnitudeDb(coefficients, 1_000f, rate),
+                0.03f
+            )
+        }
+    }
+
+    @Test
     fun zeroGainPeakFilterIsUnityAcrossTheSpectrum() {
         val coefficients = BiquadMath.coefficients(
             sampleRate, 2_400f, 1.2f, 0f, BiquadFilterType.PEAK
