@@ -653,7 +653,32 @@ private fun ProDspScreen() {
                                 Text("FREQUENCY RESPONSE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text("LIVE", color = SpectrumGreen, fontSize = 9.sp)
                             }
-                            FrequencyResponseGraph(frequencies, gains, bandQs, bandTypes, bandCount, dspOn, lowTone, highTone, lowToneFrequency, highToneFrequency, sampleRateHz)
+                            FrequencyResponseGraph(
+                                frequencies = frequencies,
+                                gains = gains,
+                                qs = bandQs,
+                                types = bandTypes,
+                                bandCount = bandCount,
+                                enabled = dspOn,
+                                lowToneDb = lowTone,
+                                highToneDb = highTone,
+                                lowToneFrequencyHz = lowToneFrequency,
+                                highToneFrequencyHz = highToneFrequency,
+                                sampleRateHz = sampleRateHz,
+                                selectedBand = selectedBand,
+                                editableFrequency = parametricMode,
+                                onBandSelected = { selectedBand = it },
+                                onBandChanged = { index, frequency, gain ->
+                                    if (parametricMode) {
+                                        frequencies[index] = frequency
+                                        dsp.setBandFrequency(index, frequency)
+                                    }
+                                    if (bandTypes[index] in setOf(BiquadFilterType.PEAK, BiquadFilterType.LOW_SHELF, BiquadFilterType.HIGH_SHELF)) {
+                                        gains[index] = gain
+                                        dsp.setBandGain(index, gain)
+                                    }
+                                }
+                            )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("20 Hz", color = Muted, fontSize = 8.sp); Text("1 kHz", color = Muted, fontSize = 8.sp); Text("20 kHz", color = Muted, fontSize = 8.sp)
                             }
@@ -969,7 +994,11 @@ private fun FrequencyResponseGraph(
     highToneDb: Float,
     lowToneFrequencyHz: Float,
     highToneFrequencyHz: Float,
-    sampleRateHz: Int
+    sampleRateHz: Int,
+    selectedBand: Int,
+    editableFrequency: Boolean,
+    onBandSelected: (Int) -> Unit,
+    onBandChanged: (Int, Float, Float) -> Unit
 ) {
     // Snapshot the EQ controls and cache the curve. The live spectrum updates
     // frequently; they should not force expensive biquad/trigonometric work.
@@ -1017,7 +1046,57 @@ private fun FrequencyResponseGraph(
         }
     }
 
-    Canvas(Modifier.fillMaxWidth().height(154.dp)) {
+    val latestBandSelected by rememberUpdatedState(onBandSelected)
+    val latestBandChanged by rememberUpdatedState(onBandChanged)
+
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(154.dp)
+            .pointerInput(frequencyValues, gainValues, sampleRateHz, editableFrequency, types) {
+                var dragIndex = -1
+                val left = 8.dp.toPx()
+                val right = size.width - 8.dp.toPx()
+                val top = 8.dp.toPx()
+                val bottom = size.height - 8.dp.toPx()
+                val graphWidth = (right - left).coerceAtLeast(1f)
+                val graphHeight = (bottom - top).coerceAtLeast(1f)
+                val maxHz = minOf(20_000f, sampleRateHz * 0.475f).coerceAtLeast(20f)
+
+                fun nearestBandAt(x: Float): Int {
+                    val tappedFrequency = 20f * (maxHz / 20f).pow(
+                        ((x - left) / graphWidth).coerceIn(0f, 1f)
+                    )
+                    return (0 until activeCount).minByOrNull { index ->
+                        kotlin.math.abs(ln(frequencyValues[index]) - ln(tappedFrequency))
+                    } ?: 0
+                }
+
+                fun updateBandAt(index: Int, x: Float, y: Float) {
+                    if (index !in 0 until activeCount) return
+                    val frequency = if (editableFrequency) {
+                        20f * (maxHz / 20f).pow(((x - left) / graphWidth).coerceIn(0f, 1f))
+                    } else frequencyValues[index]
+                    val gain = (18f - ((y - top) / graphHeight).coerceIn(0f, 1f) * 36f)
+                        .coerceIn(-15f, 15f)
+                    latestBandChanged(index, frequency, gain)
+                }
+
+                detectDragGestures(
+                    onDragStart = { point ->
+                        dragIndex = nearestBandAt(point.x)
+                        latestBandSelected(dragIndex)
+                        updateBandAt(dragIndex, point.x, point.y)
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        updateBandAt(dragIndex, change.position.x, change.position.y)
+                    },
+                    onDragEnd = { dragIndex = -1 },
+                    onDragCancel = { dragIndex = -1 }
+                )
+            }
+    ) {
         val left = 8f
         val right = size.width - 8f
         val top = 8f
@@ -1062,5 +1141,41 @@ private fun FrequencyResponseGraph(
             color = if (enabled) Accent else Muted,
             style = Stroke(width = 2.5.dp.toPx())
         )
+
+        // Draggable band handles make the response graph a real editor.
+        for (index in 0 until activeCount) {
+            val frequency = frequencyValues[index].coerceIn(20f, graphMaxHz)
+            val x = left + (ln(frequency) - ln(20f)) / ln(graphMaxHz / 20f) * graphWidth
+            val handleGain = if (types[index] in setOf(
+                    BiquadFilterType.PEAK,
+                    BiquadFilterType.LOW_SHELF,
+                    BiquadFilterType.HIGH_SHELF
+                )
+            ) gainValues[index] else 0f
+            val y = yFor(handleGain)
+            if (index == selectedBand) {
+                drawCircle(
+                    color = Accent.copy(alpha = 0.2f),
+                    radius = 11.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(x, y)
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = 5.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(x, y)
+                )
+                drawCircle(
+                    color = Accent,
+                    radius = 3.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(x, y)
+                )
+            } else {
+                drawCircle(
+                    color = Color(0xFFE6E9EC),
+                    radius = 3.5.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(x, y)
+                )
+            }
+        }
     }
 }
