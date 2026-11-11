@@ -67,6 +67,23 @@ private data class ParametricBackup(
     val bandEnabled: BooleanArray
 )
 
+private data class EqCompareSlot(
+    val bandCount: Int,
+    val parametricMode: Boolean,
+    val gainsDb: FloatArray,
+    val frequenciesHz: FloatArray,
+    val qValues: FloatArray,
+    val filterTypes: Array<BiquadFilterType>,
+    val bandEnabled: BooleanArray,
+    val preampDb: Float,
+    val lowToneDb: Float,
+    val highToneDb: Float,
+    val lowToneFrequencyHz: Float,
+    val highToneFrequencyHz: Float,
+    val autoHeadroomEnabled: Boolean,
+    val soloBandIndex: Int
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,6 +141,9 @@ private fun ProDspScreen() {
     var parametricBackup by remember { mutableStateOf<ParametricBackup?>(null) }
     var selectedBand by remember { mutableIntStateOf(0) }
     var soloBandIndex by remember { mutableIntStateOf(-1) }
+    var activeAbSlot by remember { mutableIntStateOf(0) }
+    var abSlotA by remember { mutableStateOf<EqCompareSlot?>(null) }
+    var abSlotB by remember { mutableStateOf<EqCompareSlot?>(null) }
     val frequencies = remember { mutableStateListOf<Float>().apply {
         val initialLayout = EqBandLayout.frequencies(10)
         val expandedLayout = EqBandLayout.frequencies(31)
@@ -419,6 +439,91 @@ private fun ProDspScreen() {
         exportPresetLauncher.launch("$safeFileName.prodsp.json")
     }
 
+    fun captureEqCompareSlot(): EqCompareSlot {
+        return EqCompareSlot(
+            bandCount = bandCount,
+            parametricMode = parametricMode,
+            gainsDb = FloatArray(bandCount) { gains[it] },
+            frequenciesHz = FloatArray(bandCount) { frequencies[it] },
+            qValues = FloatArray(bandCount) { bandQs[it] },
+            filterTypes = Array(bandCount) { bandTypes[it] },
+            bandEnabled = BooleanArray(bandCount) { bandEnabled[it] },
+            preampDb = preamp,
+            lowToneDb = lowTone,
+            highToneDb = highTone,
+            lowToneFrequencyHz = lowToneFrequency,
+            highToneFrequencyHz = highToneFrequency,
+            autoHeadroomEnabled = autoHeadroomOn,
+            soloBandIndex = soloBandIndex
+        )
+    }
+
+    fun restoreEqCompareSlot(slot: EqCompareSlot) {
+        bandCount = slot.bandCount.coerceIn(1, EqBandLayout.MAX_BANDS)
+        parametricMode = slot.parametricMode
+        parametricBackup = null
+        dsp.configureBands(bandCount)
+
+        for (index in 0 until EqBandLayout.MAX_BANDS) {
+            if (index < bandCount) {
+                gains[index] = slot.gainsDb.getOrElse(index) { 0f }.coerceIn(-15f, 15f)
+                frequencies[index] = slot.frequenciesHz.getOrElse(index) {
+                    bandFrequency(index, bandCount)
+                }.coerceIn(20f, maxBandFrequencyHz)
+                bandQs[index] = slot.qValues.getOrElse(index) { 1f }.coerceIn(0.3f, 8f)
+                bandTypes[index] = slot.filterTypes.getOrElse(index) { BiquadFilterType.PEAK }
+                bandEnabled[index] = slot.bandEnabled.getOrElse(index) { true }
+                dsp.setBandGain(index, gains[index])
+                dsp.setBandFrequency(index, frequencies[index])
+                dsp.setBandQ(index, bandQs[index])
+                dsp.setBandType(index, bandTypes[index])
+                dsp.setBandEnabled(index, bandEnabled[index])
+            } else {
+                gains[index] = 0f
+                bandEnabled[index] = true
+            }
+        }
+
+        preamp = slot.preampDb
+        lowTone = slot.lowToneDb
+        highTone = slot.highToneDb
+        lowToneFrequency = slot.lowToneFrequencyHz
+        highToneFrequency = slot.highToneFrequencyHz
+        autoHeadroomOn = slot.autoHeadroomEnabled
+        dsp.setPreamp(preamp)
+        dsp.setLowToneGain(lowTone)
+        dsp.setHighToneGain(highTone)
+        dsp.setLowToneFrequency(lowToneFrequency)
+        dsp.setHighToneFrequency(highToneFrequency)
+        dsp.setAutoHeadroom(autoHeadroomOn)
+        soloBandIndex = slot.soloBandIndex.takeIf { it in 0 until bandCount } ?: -1
+        dsp.setSoloBand(soloBandIndex)
+        selectedBand = selectedBand.coerceIn(0, bandCount - 1)
+        showFilterMenu = false
+        syncGains()
+    }
+
+    fun switchEqCompareSlot(targetSlot: Int) {
+        val target = targetSlot.coerceIn(0, 1)
+        val current = captureEqCompareSlot()
+
+        if (abSlotA == null || abSlotB == null) {
+            abSlotA = current
+            abSlotB = current
+            activeAbSlot = 0
+        }
+
+        if (activeAbSlot == 0) abSlotA = current else abSlotB = current
+        if (target == activeAbSlot) {
+            if (target == 0) abSlotA = current else abSlotB = current
+            return
+        }
+
+        val next = if (target == 0) abSlotA else abSlotB
+        if (next != null) restoreEqCompareSlot(next)
+        activeAbSlot = target
+    }
+
     fun savePreset(nameInput: String) {
         val name = nameInput.trim().take(24)
         if (name.isBlank()) return
@@ -649,6 +754,30 @@ private fun ProDspScreen() {
                                             modifier = Modifier.height(30.dp),
                                         )
                                     }
+                                }
+                            }
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text("A/B EQ COMPARE", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    Text("Switch between two saved EQ tunings", color = Muted, fontSize = 7.sp)
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    FilterChip(
+                                        selected = activeAbSlot == 0,
+                                        onClick = { switchEqCompareSlot(0) },
+                                        label = { Text("A", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                        modifier = Modifier.height(29.dp)
+                                    )
+                                    FilterChip(
+                                        selected = activeAbSlot == 1,
+                                        onClick = { switchEqCompareSlot(1) },
+                                        label = { Text("B", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                        modifier = Modifier.height(29.dp)
+                                    )
                                 }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
