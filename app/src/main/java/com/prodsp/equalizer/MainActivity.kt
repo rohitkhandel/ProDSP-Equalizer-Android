@@ -45,6 +45,7 @@ import androidx.media3.common.AudioListener
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.ExoPlayer
 import java.util.Locale
 
@@ -108,25 +109,6 @@ private fun ProDspScreen() {
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
-            override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                val nativeBands = engine.attach(audioSessionId)
-                bands.clear()
-                nativeBands.forEach { b ->
-                    bands.add(UiBand(
-                        index = b.index,
-                        frequencyHz = b.frequencyHz,
-                        minDb = b.minLevelMb / 100f,
-                        maxDb = b.maxLevelMb / 100f,
-                        valueDb = b.levelMb / 100f
-                    ))
-                }
-                status = if (nativeBands.isNotEmpty()) {
-                    "DSP connected · ${nativeBands.size}-band device EQ"
-                } else {
-                    "This device did not provide an audio EQ effect"
-                }
-            }
-
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 playing = isPlaying
                 if (isPlaying) status = if (engine.isAvailable) "Playing · DSP active" else "Playing · device EQ unavailable"
@@ -148,9 +130,34 @@ private fun ProDspScreen() {
                 playing = false
             }
         }
+        val analyticsListener = object : AnalyticsListener {
+            override fun onAudioSessionIdChanged(
+                eventTime: AnalyticsListener.EventTime,
+                audioSessionId: Int
+            ) {
+                val nativeBands = engine.attach(audioSessionId)
+                bands.clear()
+                nativeBands.forEach { b ->
+                    bands.add(UiBand(
+                        index = b.index,
+                        frequencyHz = b.frequencyHz,
+                        minDb = b.minLevelMb / 100f,
+                        maxDb = b.maxLevelMb / 100f,
+                        valueDb = b.levelMb / 100f
+                    ))
+                }
+                status = if (nativeBands.isNotEmpty()) {
+                    "DSP connected · ${nativeBands.size}-band device EQ"
+                } else {
+                    "This device did not provide an audio EQ effect"
+                }
+            }
+        }
         player.addListener(listener)
+        player.addAnalyticsListener(analyticsListener)
         onDispose {
             player.removeListener(listener)
+            player.removeAnalyticsListener(analyticsListener)
             player.release()
             engine.release()
         }
