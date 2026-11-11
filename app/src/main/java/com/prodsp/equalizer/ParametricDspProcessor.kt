@@ -25,6 +25,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Volatile private var qValues = FloatArray(31) { 1.0f }
     @Volatile private var bandTypes = Array(31) { BiquadFilterType.PEAK }
     @Volatile private var bandEnabled = BooleanArray(31) { true }
+    @Volatile private var soloBandIndex = -1
     @Volatile private var centerFrequencies = FloatArray(31) { i ->
         if (i < 10) defaultFrequency(i, 10) else defaultFrequency(i, 31)
     }
@@ -127,6 +128,11 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val copy = bandEnabled.copyOf()
         copy[index] = isEnabled
         bandEnabled = copy
+        updateTargets()
+    }
+
+    @Synchronized fun setSoloBand(index: Int) {
+        soloBandIndex = if (index in 0 until bandCount) index else -1
         updateTargets()
     }
 
@@ -293,8 +299,9 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val qs = qValues.copyOf()
         val types = bandTypes.copyOf()
         val enabledBands = bandEnabled.copyOf()
+        val solo = soloBandIndex
         for (i in 0 until 31) {
-            if (i >= count || !enabledBands[i]) {
+            if (i >= count || !enabledBands[i] || (solo >= 0 && solo != i)) {
                 filters[i].setTarget(BiquadCoefficients(1f, 0f, 0f, 0f, 0f))
             } else {
                 val frequency = frequencies[i].coerceIn(20f, sampleRate * 0.475f)
