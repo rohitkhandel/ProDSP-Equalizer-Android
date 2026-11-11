@@ -957,32 +957,37 @@ private fun FrequencyResponseGraph(
     val qValues = qs.take(activeCount)
     val typeValues = types.take(activeCount)
     val curveValues = remember(
-        frequencyValues, gainValues, qValues, typeValues, enabled, lowToneDb, highToneDb, lowToneFrequencyHz, highToneFrequencyHz, sampleRateHz
+        frequencyValues, gainValues, qValues, typeValues, enabled,
+        lowToneDb, highToneDb, lowToneFrequencyHz, highToneFrequencyHz, sampleRateHz
     ) {
-        FloatArray(221) { point ->
-            val fraction = point / 220f
+        if (!enabled) {
+            FloatArray(221)
+        } else {
+            // Coefficients depend on the band controls, not on each graph
+            // sample. Build once per edit, then evaluate the response curve.
+            val bandCoefficients = (0 until activeCount).map { index ->
+                BiquadMath.coefficients(
+                    sampleRateHz,
+                    frequencyValues[index],
+                    qValues[index],
+                    gainValues[index],
+                    typeValues[index]
+                )
+            }
+            val lowShelf = BiquadMath.coefficients(
+                sampleRateHz, lowToneFrequencyHz, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF
+            )
+            val highShelf = BiquadMath.coefficients(
+                sampleRateHz, highToneFrequencyHz, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF
+            )
             val maxHz = minOf(20_000f, sampleRateHz * 0.475f).coerceAtLeast(20f)
-            val hz = 20f * (maxHz / 20f).pow(fraction)
-            if (!enabled) {
-                0f
-            } else {
+            FloatArray(221) { point ->
+                val fraction = point / 220f
+                val hz = 20f * (maxHz / 20f).pow(fraction)
                 var totalDb = 0f
-                for (index in 0 until activeCount) {
-                    val coefficients = BiquadMath.coefficients(
-                        sampleRateHz,
-                        frequencyValues[index],
-                        qValues[index],
-                        gainValues[index],
-                        typeValues[index]
-                    )
+                for (coefficients in bandCoefficients) {
                     totalDb += BiquadMath.magnitudeDb(coefficients, hz, sampleRateHz)
                 }
-                val lowShelf = BiquadMath.coefficients(
-                    sampleRateHz, lowToneFrequencyHz, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF
-                )
-                val highShelf = BiquadMath.coefficients(
-                    sampleRateHz, highToneFrequencyHz, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF
-                )
                 totalDb += BiquadMath.magnitudeDb(lowShelf, hz, sampleRateHz)
                 totalDb += BiquadMath.magnitudeDb(highShelf, hz, sampleRateHz)
                 totalDb
