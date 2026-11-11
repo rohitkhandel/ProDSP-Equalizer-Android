@@ -36,7 +36,17 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Volatile private var preampDb = 0f
     @Volatile private var enabled = true
     @Volatile private var peakGuard = true
+    @Volatile private var compressorEnabled = false
+    @Volatile private var compressorThresholdDb = -18f
+    @Volatile private var compressorRatio = 3f
+    @Volatile private var compressorAttackMs = 10f
+    @Volatile private var compressorReleaseMs = 120f
+    @Volatile private var compressorMakeupDb = 0f
+    @Volatile private var limiterEnabled = true
+    @Volatile private var limiterCeilingDb = -1f
 
+    private var compressorEnvelope = 0f
+    private var compressorGain = 1f
     private var sampleRate = 0
     private var channelCount = 0
     private var filters = emptyArray<Filter>()
@@ -99,6 +109,14 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     fun setPreamp(valueDb: Float) { preampDb = valueDb.coerceIn(-12f, 6f) }
     fun setEnabled(value: Boolean) { enabled = value }
     fun setPeakGuard(value: Boolean) { peakGuard = value }
+    fun setCompressorEnabled(value: Boolean) { compressorEnabled = value }
+    fun setCompressorThreshold(valueDb: Float) { compressorThresholdDb = valueDb.coerceIn(-36f, 0f) }
+    fun setCompressorRatio(value: Float) { compressorRatio = value.coerceIn(1f, 20f) }
+    fun setCompressorAttack(valueMs: Float) { compressorAttackMs = valueMs.coerceIn(1f, 100f) }
+    fun setCompressorRelease(valueMs: Float) { compressorReleaseMs = valueMs.coerceIn(10f, 1000f) }
+    fun setCompressorMakeup(valueDb: Float) { compressorMakeupDb = valueDb.coerceIn(0f, 12f) }
+    fun setLimiterEnabled(value: Boolean) { limiterEnabled = value }
+    fun setLimiterCeiling(valueDb: Float) { limiterCeilingDb = valueDb.coerceIn(-12f, 0f) }
     @Synchronized fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), centerFrequencies.copyOf(), qValues.copyOf(), preampDb, enabled, peakGuard)
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
@@ -141,6 +159,15 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val active = enabled
         val gain = 10.0.pow((preampDb / 20.0).toDouble()).toFloat()
         val protect = peakGuard
+        val useCompressor = compressorEnabled
+        val useLimiter = limiterEnabled
+        val attackSeconds = compressorAttackMs / 1000f
+        val releaseSeconds = compressorReleaseMs / 1000f
+        val attackCoeff = if (sampleRate > 0) exp(-1f / (attackSeconds * sampleRate)) else 0f
+        val releaseCoeff = if (sampleRate > 0) exp(-1f / (releaseSeconds * sampleRate)) else 0f
+        val makeup = 10.0.pow((compressorMakeupDb / 20.0).toDouble()).toFloat()
+        val ceiling = 10.0.pow((limiterCeilingDb / 20.0).toDouble()).toFloat()
+        val frame = FloatArray(channelCount)
 
         while (input.remaining() >= 2 * channelCount) {
             if (active) {
@@ -148,16 +175,38 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 for (band in 0 until bandCount) filters[band].advance(transitionRemaining)
                 highShelfFilter?.advance(transitionRemaining)
             }
+            var framePeak = 0f
             for (channel in 0 until channelCount) {
-                val raw = input.short.toInt() / 32768f
-                var sample = raw
+                var sample = input.short.toInt() / 32768f
                 if (active) {
                     sample = lowShelfFilter?.process(sample, channel) ?: sample
                     for (band in 0 until bandCount) sample = filters[band].process(sample, channel)
                     sample = highShelfFilter?.process(sample, channel) ?: sample
                     sample *= gain
-                    if (protect) sample = softLimit(sample)
                 }
+                frame[channel] = sample
+                framePeak = maxOf(framePeak, abs(sample))
+            }
+
+            if (useCompressor) {
+                val detectorCoeff = if (framePeak > compressorEnvelope) attackCoeff else releaseCoeff
+                compressorEnvelope = detectorCoeff * compressorEnvelope + (1f - detectorCoeff) * framePeak
+                val levelDb = 20f * kotlin.math.log10(compressorEnvelope.coerceAtLeast(1e-6f))
+                val overThreshold = (levelDb - compressorThresholdDb).coerceAtLeast(0f)
+                val compressedLevelDb = compressorThresholdDb + overThreshold / compressorRatio
+                val targetGain = 10.0.pow(((compressedLevelDb - levelDb) / 20.0).toDouble()).toFloat()
+                val gainCoeff = if (targetGain < compressorGain) attackCoeff else releaseCoeff
+                compressorGain = gainCoeff * compressorGain + (1f - gainCoeff) * targetGain
+            } else {
+                compressorEnvelope = 0f
+                compressorGain = 1f
+            }
+
+            for (channel in 0 until channelCount) {
+                var sample = frame[channel]
+                if (useCompressor) sample *= compressorGain * makeup
+                if (protect) sample = softLimit(sample)
+                if (useLimiter) sample = sample.coerceIn(-ceiling, ceiling)
                 val quantized = (sample.coerceIn(-1f, 0.9999695f) * 32768f).toInt()
                 output.putShort(quantized.toShort())
             }
@@ -228,6 +277,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     }
 
     override fun onFlush() {
+        compressorEnvelope = 0f
+        compressorGain = 1f
         filters.forEach { it.clearState() }
         lowShelfFilter?.clearState()
         highShelfFilter?.clearState()
@@ -237,6 +288,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     override fun onReset() {
         sampleRate = 0
         channelCount = 0
+        compressorEnvelope = 0f
+        compressorGain = 1f
         filters = emptyArray()
         lowShelfFilter = null
         highShelfFilter = null
