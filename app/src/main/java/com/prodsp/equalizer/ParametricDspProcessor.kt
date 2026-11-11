@@ -53,6 +53,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     private val fftSize = 2048
     private val fftReal = FloatArray(fftSize)
     private val fftImag = FloatArray(fftSize)
+    private val fftRightReal = FloatArray(fftSize)
+    private val fftRightImag = FloatArray(fftSize)
     private val fftWindow = FloatArray(fftSize) { i ->
         (0.5 - 0.5 * kotlin.math.cos(2.0 * PI * i / (fftSize - 1))).toFloat()
     }
@@ -158,13 +160,17 @@ class ParametricDspProcessor : BaseAudioProcessor() {
 
     fun spectrumSnapshot(): FloatArray = spectrumBands.copyOf()
 
-    private fun pushSpectrumSample(sample: Float) {
-        fftReal[fftWriteIndex] = sample * fftWindow[fftWriteIndex]
+    private fun pushSpectrumSample(leftSample: Float, rightSample: Float) {
+        val window = fftWindow[fftWriteIndex]
+        fftReal[fftWriteIndex] = leftSample * window
         fftImag[fftWriteIndex] = 0f
+        fftRightReal[fftWriteIndex] = rightSample * window
+        fftRightImag[fftWriteIndex] = 0f
         fftWriteIndex++
         if (fftWriteIndex < fftSize) return
         fftWriteIndex = 0
 
+        // Bit-reverse both channels before the radix-2 FFT.
         var j = 0
         for (i in 1 until fftSize) {
             var bit = fftSize shr 1
@@ -174,12 +180,19 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             }
             j = j xor bit
             if (i < j) {
-                val real = fftReal[i]
+                val leftReal = fftReal[i]
                 fftReal[i] = fftReal[j]
-                fftReal[j] = real
-                val imaginary = fftImag[i]
+                fftReal[j] = leftReal
+                val leftImag = fftImag[i]
                 fftImag[i] = fftImag[j]
-                fftImag[j] = imaginary
+                fftImag[j] = leftImag
+
+                val rightReal = fftRightReal[i]
+                fftRightReal[i] = fftRightReal[j]
+                fftRightReal[j] = rightReal
+                val rightImag = fftRightImag[i]
+                fftRightImag[i] = fftRightImag[j]
+                fftRightImag[j] = rightImag
             }
         }
 
@@ -189,24 +202,33 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             val angle = (-2.0 * PI / size).toFloat()
             val stepReal = kotlin.math.cos(angle)
             val stepImag = kotlin.math.sin(angle)
-            var start = 0
-            while (start < fftSize) {
+            var blockStart = 0
+            while (blockStart < fftSize) {
                 var wr = 1f
                 var wi = 0f
                 for (offset in 0 until half) {
-                    val even = start + offset
+                    val even = blockStart + offset
                     val odd = even + half
-                    val tr = wr * fftReal[odd] - wi * fftImag[odd]
-                    val ti = wr * fftImag[odd] + wi * fftReal[odd]
-                    fftReal[odd] = fftReal[even] - tr
-                    fftImag[odd] = fftImag[even] - ti
-                    fftReal[even] += tr
-                    fftImag[even] += ti
+
+                    val leftTr = wr * fftReal[odd] - wi * fftImag[odd]
+                    val leftTi = wr * fftImag[odd] + wi * fftReal[odd]
+                    fftReal[odd] = fftReal[even] - leftTr
+                    fftImag[odd] = fftImag[even] - leftTi
+                    fftReal[even] += leftTr
+                    fftImag[even] += leftTi
+
+                    val rightTr = wr * fftRightReal[odd] - wi * fftRightImag[odd]
+                    val rightTi = wr * fftRightImag[odd] + wi * fftRightReal[odd]
+                    fftRightReal[odd] = fftRightReal[even] - rightTr
+                    fftRightImag[odd] = fftRightImag[even] - rightTi
+                    fftRightReal[even] += rightTr
+                    fftRightImag[even] += rightTi
+
                     val nextWr = wr * stepReal - wi * stepImag
                     wi = wr * stepImag + wi * stepReal
                     wr = nextWr
                 }
-                start += size
+                blockStart += size
             }
             size = size shl 1
         }
@@ -214,6 +236,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val previous = spectrumBands
         val next = FloatArray(48)
         val rate = sampleRate.coerceAtLeast(1).toFloat()
+        val scale = 2f / fftSize
         for (band in next.indices) {
             val lowHz = 30f * (16_000f / 30f).pow(band.toFloat() / next.size)
             val highHz = 30f * (16_000f / 30f).pow((band + 1f) / next.size)
@@ -221,9 +244,14 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             val lastBin = (highHz * fftSize / rate).toInt().coerceIn(firstBin + 1, fftSize / 2)
             var magnitude = 0f
             for (bin in firstBin until lastBin) {
-                val real = fftReal[bin]
-                val imaginary = fftImag[bin]
-                magnitude = maxOf(magnitude, sqrt(real * real + imaginary * imaginary) * (2f / fftSize))
+                val leftReal = fftReal[bin]
+                val leftImag = fftImag[bin]
+                val rightReal = fftRightReal[bin]
+                val rightImag = fftRightImag[bin]
+                val leftPower = leftReal * leftReal + leftImag * leftImag
+                val rightPower = rightReal * rightReal + rightImag * rightImag
+                val combined = sqrt((leftPower + rightPower) * 0.5f) * scale
+                magnitude = maxOf(magnitude, combined)
             }
             val db = 20f * kotlin.math.log10(magnitude.coerceAtLeast(1e-5f))
             val normalized = ((db + 72f) / 72f).coerceIn(0f, 1f)
@@ -348,9 +376,9 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 val quantized = (sample.coerceIn(-1f, 0.9999695f) * 32768f).toInt()
                 output.putShort(quantized.toShort())
             }
-            var monoSample = 0f
-            for (channel in 0 until channelCount) monoSample += frame[channel] / channelCount
-            pushSpectrumSample(monoSample)
+            val spectrumLeft = frame[0]
+            val spectrumRight = if (channelCount == 2) frame[1] else frame[0]
+            pushSpectrumSample(spectrumLeft, spectrumRight)
             if (transitionRemaining > 0) transitionRemaining--
         }
         inputBuffer.position(input.position())
