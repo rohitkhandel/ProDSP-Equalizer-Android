@@ -68,6 +68,9 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     private var highShelfFilter: Filter? = null
     @Volatile private var transitionRemaining = 0
     private var enabledMix = 1f
+    private var currentPreampGain = 1f
+    private var currentStereoWidth = 1f
+    private var currentStereoBalance = 0f
 
     data class Snapshot(val bandCount: Int, val gainsDb: FloatArray, val centerFrequencies: FloatArray, val qValues: FloatArray, val bandTypes: Array<BiquadFilterType>, val preampDb: Float, val enabled: Boolean, val peakGuard: Boolean)
 
@@ -271,7 +274,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val input = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
         val targetEqMix = if (enabled) 1f else 0f
         val eqMixStep = if (sampleRate > 0) 1f / (sampleRate * 0.01f) else 1f
-        val gain = 10.0.pow((preampDb / 20.0).toDouble()).toFloat()
+        val targetPreampGain = 10.0.pow((preampDb / 20.0).toDouble()).toFloat()
         val protect = peakGuard
         val useCompressor = compressorEnabled
         val useLimiter = limiterEnabled
@@ -281,8 +284,11 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val releaseCoeff = if (sampleRate > 0) exp(-1f / (releaseSeconds * sampleRate)) else 0f
         val makeup = 10.0.pow((compressorMakeupDb / 20.0).toDouble()).toFloat()
         val ceiling = 10.0.pow((limiterCeilingDb / 20.0).toDouble()).toFloat()
-        val width = stereoWidth
-        val balance = stereoBalance
+        val targetWidth = stereoWidth
+        val targetBalance = stereoBalance
+        val controlSmoothing = if (sampleRate > 0) {
+            (1f - exp(-1f / (0.01f * sampleRate))).coerceIn(0f, 1f)
+        } else 1f
         val frame = frameScratch
 
         while (input.remaining() >= 2 * channelCount) {
@@ -292,6 +298,9 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             for (band in 0 until bandCount) filters[band].advance(transitionRemaining)
             highShelfFilter?.advance(transitionRemaining)
             enabledMix += (targetEqMix - enabledMix).coerceIn(-eqMixStep, eqMixStep)
+            currentPreampGain += (targetPreampGain - currentPreampGain) * controlSmoothing
+            currentStereoWidth += (targetWidth - currentStereoWidth) * controlSmoothing
+            currentStereoBalance += (targetBalance - currentStereoBalance) * controlSmoothing
 
             var framePeak = 0f
             for (channel in 0 until channelCount) {
@@ -299,22 +308,22 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 var wetSample = lowShelfFilter?.process(drySample, channel) ?: drySample
                 for (band in 0 until bandCount) wetSample = filters[band].process(wetSample, channel)
                 wetSample = highShelfFilter?.process(wetSample, channel) ?: wetSample
-                wetSample *= gain
+                wetSample *= currentPreampGain
                 val sample = drySample + (wetSample - drySample) * enabledMix
                 frame[channel] = sample
             }
 
             // Mid/Side stereo width. 100% is transparent, 0% folds to mono,
             // and values above 100% increase the side component.
-            if (channelCount == 2 && width != 1f) {
+            if (channelCount == 2 && kotlin.math.abs(currentStereoWidth - 1f) > 0.0001f) {
                 val left = frame[0]
                 val right = frame[1]
-                frame[0] = StereoWidthMath.left(left, right, width * 100f)
-                frame[1] = StereoWidthMath.right(left, right, width * 100f)
+                frame[0] = StereoWidthMath.left(left, right, currentStereoWidth * 100f)
+                frame[1] = StereoWidthMath.right(left, right, currentStereoWidth * 100f)
             }
-            if (channelCount == 2 && balance != 0f) {
-                frame[0] *= StereoWidthMath.leftBalanceGain(balance)
-                frame[1] *= StereoWidthMath.rightBalanceGain(balance)
+            if (channelCount == 2 && kotlin.math.abs(currentStereoBalance) > 0.0001f) {
+                frame[0] *= StereoWidthMath.leftBalanceGain(currentStereoBalance)
+                frame[1] *= StereoWidthMath.rightBalanceGain(currentStereoBalance)
             }
             for (channel in 0 until channelCount) framePeak = maxOf(framePeak, abs(frame[channel]))
 
@@ -366,6 +375,9 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         compressorEnvelope = 0f
         compressorGain = 1f
         enabledMix = if (enabled) 1f else 0f
+        currentPreampGain = 10.0.pow((preampDb / 20.0).toDouble()).toFloat()
+        currentStereoWidth = stereoWidth
+        currentStereoBalance = stereoBalance
         fftWriteIndex = 0
         spectrumBands = FloatArray(48)
         filters.forEach { it.clearState() }
