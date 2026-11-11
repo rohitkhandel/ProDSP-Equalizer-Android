@@ -103,7 +103,8 @@ private fun ProDspScreen() {
     var lowTone by remember { mutableFloatStateOf(0f) }
     var highTone by remember { mutableFloatStateOf(0f) }
     var bass by remember { mutableFloatStateOf(0f) }
-    var width by remember { mutableFloatStateOf(0f) }
+    var width by remember { mutableFloatStateOf(100f) }
+    var virtualizerStrength by remember { mutableFloatStateOf(0f) }
     val gains = remember { mutableStateListOf<Float>().apply { repeat(31) { add(0f) } } }
     val preferences = remember { context.getSharedPreferences("prodsp_presets", android.content.Context.MODE_PRIVATE) }
     val savedPresets = remember { mutableStateListOf<String>().apply {
@@ -153,7 +154,7 @@ private fun ProDspScreen() {
             override fun onAudioSessionIdChanged(eventTime: AnalyticsListener.EventTime, audioSessionId: Int) {
                 deviceEffects.attach(audioSessionId)
                 deviceEffects.setBassStrength((bass * 10).toInt())
-                deviceEffects.setVirtualizerStrength((width * 10).toInt())
+                deviceEffects.setVirtualizerStrength((virtualizerStrength * 10).toInt())
             }
         }
         player.addListener(listener)
@@ -235,6 +236,9 @@ private fun ProDspScreen() {
             .put("preamp", preamp)
             .put("lowTone", lowTone)
             .put("highTone", highTone)
+            .put("bass", bass)
+            .put("stereoWidth", width)
+            .put("virtualizerStrength", virtualizerStrength)
             .put("peakGuard", peakGuard)
             .put("compressorOn", compressorOn)
             .put("compressorThreshold", compressorThreshold)
@@ -277,8 +281,14 @@ private fun ProDspScreen() {
             preamp = data.optDouble("preamp", 0.0).toFloat()
             lowTone = data.optDouble("lowTone", 0.0).toFloat()
             highTone = data.optDouble("highTone", 0.0).toFloat()
+            bass = data.optDouble("bass", 0.0).toFloat()
+            width = data.optDouble("stereoWidth", 100.0).toFloat().coerceIn(0f, 200f)
+            virtualizerStrength = data.optDouble("virtualizerStrength", 0.0).toFloat().coerceIn(0f, 100f)
             dsp.setLowToneGain(lowTone)
             dsp.setHighToneGain(highTone)
+            dsp.setStereoWidth(width)
+            deviceEffects.setBassStrength((bass * 10).toInt())
+            deviceEffects.setVirtualizerStrength((virtualizerStrength * 10).toInt())
             peakGuard = data.optBoolean("peakGuard", true)
             compressorOn = data.optBoolean("compressorOn", false)
             compressorThreshold = data.optDouble("compressorThreshold", -18.0).toFloat()
@@ -477,8 +487,12 @@ private fun ProDspScreen() {
                             Divider(color = Color(0xFF252B30))
                             Text("DEVICE EFFECTS", color = Muted, fontSize = 9.sp, letterSpacing = 1.5.sp)
                             ValueSlider("Bass enhancement", bass, { bass = it; deviceEffects.setBassStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
-                            ValueSlider("Stereo width", width, { width = it; deviceEffects.setVirtualizerStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
-                            Text("Device effects depend on the Android audio implementation.", color = Muted, fontSize = 10.sp)
+                            ValueSlider("Device virtualizer", virtualizerStrength, { virtualizerStrength = it; deviceEffects.setVirtualizerStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
+                            Divider(color = Color(0xFF252B30))
+                            Text("STEREO IMAGE · PCM DSP", color = Muted, fontSize = 9.sp, letterSpacing = 1.5.sp)
+                            ValueSlider("Stereo width", width, { width = it; dsp.setStereoWidth(it) }, 0f..200f, "%.0f%%")
+                            Text("100% = original stereo · 0% = mono · above 100% = wider image", color = Muted, fontSize = 10.sp)
+                            Text("Device virtualizer availability depends on Android and the audio route.", color = Muted, fontSize = 10.sp)
                         }
                     }
                     2 -> {
