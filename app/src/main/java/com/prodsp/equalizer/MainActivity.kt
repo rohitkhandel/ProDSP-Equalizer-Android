@@ -135,6 +135,7 @@ private fun ProDspScreen() {
                 audioSessionId: Int
             ) {
                 val nativeBands = engine.attach(audioSessionId)
+                engine.setEnabled(effectsOn)
                 bands.clear()
                 nativeBands.forEach { b ->
                     bands.add(UiBand(
@@ -267,9 +268,9 @@ private fun ProDspScreen() {
                             }
                         }, -12f..12f, "%+.1f dB")
                         ValueSlider("Stereo width", width, { width = it; if (effectsOn) engine.setVirtualizerStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
-                        Text("Preamp  ${(preamp * 100).toInt()}%", color = Color(0xFFDCE3E8), fontSize = 13.sp)
+                        Text("Output level  ${(preamp * 100).toInt()}%", color = Color(0xFFDCE3E8), fontSize = 13.sp)
                         Slider(value = preamp, onValueChange = { preamp = it; player.volume = it }, valueRange = 0f..1f)
-                        Text("Tone gains adjust the lowest and highest native EQ bands. Stereo width depends on device support.", color = Color(0xFF8E99A4), fontSize = 11.sp)
+                        Text("Output level controls this player's volume. Tone gains adjust the lowest and highest native EQ bands. Stereo width depends on device support.", color = Color(0xFF8E99A4), fontSize = 11.sp)
                     }
                 }
             }
