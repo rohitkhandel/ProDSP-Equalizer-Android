@@ -74,6 +74,20 @@ internal object EqBandLayout {
         }
     }
 
+    /** Index of the nearest old centre frequency for each new centre. */
+    fun nearestSourceIndices(
+        sourceFrequenciesHz: FloatArray,
+        targetFrequenciesHz: FloatArray
+    ): IntArray {
+        if (sourceFrequenciesHz.isEmpty()) return IntArray(targetFrequenciesHz.size) { 0 }
+        return IntArray(targetFrequenciesHz.size) { index ->
+            val targetLog = ln(targetFrequenciesHz[index].coerceAtLeast(1f))
+            sourceFrequenciesHz.indices.minBy { sourceIndex ->
+                abs(ln(sourceFrequenciesHz[sourceIndex].coerceAtLeast(1f)) - targetLog)
+            }
+        }
+    }
+
     /** Carries the nearest old control value to each new centre frequency. */
     fun resampleNearest(
         sourceFrequenciesHz: FloatArray,
@@ -82,12 +96,8 @@ internal object EqBandLayout {
     ): FloatArray {
         val size = minOf(sourceFrequenciesHz.size, sourceValues.size)
         if (size == 0) return FloatArray(targetFrequenciesHz.size)
-        return FloatArray(targetFrequenciesHz.size) { index ->
-            val targetLog = ln(targetFrequenciesHz[index].coerceAtLeast(1f))
-            val nearest = (0 until size).minBy { sourceIndex ->
-                abs(ln(sourceFrequenciesHz[sourceIndex].coerceAtLeast(1f)) - targetLog)
-            }
-            sourceValues[nearest]
-        }
+        val safeSources = sourceFrequenciesHz.copyOf(size)
+        val indices = nearestSourceIndices(safeSources, targetFrequenciesHz)
+        return FloatArray(targetFrequenciesHz.size) { sourceValues[indices[it]] }
     }
 }
