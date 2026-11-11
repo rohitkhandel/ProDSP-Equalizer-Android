@@ -149,16 +149,18 @@ private fun ProDspScreen() {
     val sessionToken = remember(context) {
         SessionToken(context, ComponentName(context, ProDspPlaybackService::class.java))
     }
-    val controllerFuture = remember(sessionToken) {
+    val controllerFuture = remember(sessionToken, connectionAttempts) {
         MediaController.Builder(context, sessionToken).buildAsync()
     }
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var connectionFailed by remember { mutableStateOf(false) }
+    var connectionAttempts by remember { mutableIntStateOf(0) }
 
     DisposableEffect(controllerFuture) {
         val listener = Runnable {
             try {
                 controller = controllerFuture.get()
+                connectionFailed = false
             } catch (_: Exception) {
                 connectionFailed = true
             }
@@ -182,6 +184,17 @@ private fun ProDspScreen() {
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
+                    if (connectionFailed) {
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                connectionFailed = false
+                                connectionAttempts++
+                            }
+                        ) {
+                            Text("RETRY CONNECTION")
+                        }
+                    }
                 }
             }
         }
