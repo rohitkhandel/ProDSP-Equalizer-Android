@@ -962,6 +962,7 @@ private fun ProDspKnob(label: String, value: Float, min: Float, max: Float, form
     var dragStartValue by remember(label) { mutableFloatStateOf(value) }
     var dragStartNorm by remember(label) { mutableFloatStateOf(0.5f) }
     val latestValue by rememberUpdatedState(value)
+    val latestOnValue by rememberUpdatedState(onValue)
     val logarithmic = label == "FREQ"
     fun normalized(value: Float): Float {
         return if (logarithmic) {
@@ -980,10 +981,10 @@ private fun ProDspKnob(label: String, value: Float, min: Float, max: Float, form
                 if (logarithmic) {
                     dragStartNorm = (dragStartNorm - amount.y / 260f).coerceIn(0f, 1f)
                     val hz = exp(ln(min) + dragStartNorm * (ln(max) - ln(min)))
-                    onValue(hz.coerceIn(min, max))
+                    latestOnValue(hz.coerceIn(min, max))
                 } else {
                     dragStartValue = (dragStartValue - amount.y * (max - min) / 260f).coerceIn(min, max)
-                    onValue(dragStartValue)
+                    latestOnValue(dragStartValue)
                 }
             })
         }) {
