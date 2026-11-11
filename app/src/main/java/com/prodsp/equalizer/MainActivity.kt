@@ -105,6 +105,7 @@ private fun ProDspScreen() {
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
+            @OptIn(androidx.media3.common.util.UnstableApi::class)
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 val nativeBands = engine.attach(audioSessionId)
                 bands.clear()
