@@ -30,6 +30,16 @@ class StereoWidthMathTest {
     }
 
     @Test
+    fun balanceAttenuatesOnlyTheOppositeChannel() {
+        assertEquals(0.25f, StereoWidthMath.leftBalanceGain(75f), 1e-6f)
+        assertEquals(1f, StereoWidthMath.rightBalanceGain(75f), 1e-6f)
+        assertEquals(1f, StereoWidthMath.leftBalanceGain(-40f), 1e-6f)
+        assertEquals(0.6f, StereoWidthMath.rightBalanceGain(-40f), 1e-6f)
+        assertEquals(1f, StereoWidthMath.leftBalanceGain(0f), 1e-6f)
+        assertEquals(1f, StereoWidthMath.rightBalanceGain(0f), 1e-6f)
+    }
+
+    @Test
     fun requestedWidthIsClampedToSafeControlRange() {
         assertEquals(
             StereoWidthMath.left(0.7f, -0.2f, 200f),
