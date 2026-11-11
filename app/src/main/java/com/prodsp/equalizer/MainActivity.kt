@@ -28,6 +28,8 @@ import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.sin
+import org.json.JSONArray
+import org.json.JSONObject
 
 private val Accent = Color(0xFFB5F36B)
 private val Muted = Color(0xFF9AA4AF)
@@ -64,6 +66,12 @@ private fun ProDspScreen() {
     var bass by remember { mutableFloatStateOf(0f) }
     var width by remember { mutableFloatStateOf(0f) }
     val gains = remember { mutableStateListOf<Float>().apply { repeat(31) { add(0f) } } }
+    val preferences = remember { context.getSharedPreferences("prodsp_presets", android.content.Context.MODE_PRIVATE) }
+    val savedPresets = remember { mutableStateListOf<String>().apply {
+        addAll(preferences.getStringSet("names", emptySet())?.sorted() ?: emptyList())
+    } }
+    var showSaveDialog by remember { mutableStateOf(false) }
+    var presetName by remember { mutableStateOf("") }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
@@ -110,6 +118,53 @@ private fun ProDspScreen() {
     }
 
     fun syncGains() { dsp.setAllGains(FloatArray(31) { gains[it] }) }
+
+    fun savePreset(nameInput: String) {
+        val name = nameInput.trim().take(24)
+        if (name.isBlank()) return
+        val data = JSONObject()
+            .put("bandCount", bandCount)
+            .put("gains", JSONArray(gains.toList()))
+            .put("frequencies", JSONArray(frequencies.toList()))
+            .put("qs", JSONArray(bandQs.toList()))
+            .put("preamp", preamp)
+            .put("peakGuard", peakGuard)
+            .put("dspOn", dspOn)
+        preferences.edit().putString("preset_$name", data.toString())
+            .putStringSet("names", (savedPresets.toSet() + name)).apply()
+        if (name !in savedPresets) savedPresets.add(name)
+        showSaveDialog = false
+        presetName = ""
+    }
+
+    fun loadPreset(name: String) {
+        val raw = preferences.getString("preset_$name", null) ?: return
+        try {
+            val data = JSONObject(raw)
+            bandCount = data.optInt("bandCount", 10).coerceIn(1, 31)
+            dsp.configureBands(bandCount)
+            val savedGains = data.optJSONArray("gains") ?: JSONArray()
+            val savedFrequencies = data.optJSONArray("frequencies") ?: JSONArray()
+            val savedQs = data.optJSONArray("qs") ?: JSONArray()
+            for (i in 0 until 31) {
+                gains[i] = savedGains.optDouble(i, 0.0).toFloat()
+                frequencies[i] = savedFrequencies.optDouble(i, bandFrequency(i, bandCount).toDouble()).toFloat()
+                bandQs[i] = savedQs.optDouble(i, 1.0).toFloat()
+                dsp.setBandFrequency(i, frequencies[i])
+                dsp.setBandQ(i, bandQs[i])
+            }
+            preamp = data.optDouble("preamp", 0.0).toFloat()
+            peakGuard = data.optBoolean("peakGuard", true)
+            dspOn = data.optBoolean("dspOn", true)
+            dsp.setPreamp(preamp)
+            dsp.setPeakGuard(peakGuard)
+            dsp.setEnabled(dspOn)
+            syncGains()
+            selectedBand = 0
+        } catch (_: Exception) {
+            status = "Could not load preset"
+        }
+    }
     fun applyPreset(name: String) {
         val values = FloatArray(31)
         for (i in 0 until bandCount) {
@@ -172,6 +227,19 @@ private fun ProDspScreen() {
                                 }
                             }
                         }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { showSaveDialog = true }) { Text("Save preset") }
+                            savedPresets.take(3).forEach { name ->
+                                TextButton(onClick = { loadPreset(name) }) { Text(name, fontSize = 10.sp) }
+                            }
+                        }
+                        if (savedPresets.size > 3) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                savedPresets.drop(3).forEach { name ->
+                                    TextButton(onClick = { loadPreset(name) }) { Text(name, fontSize = 10.sp) }
+                                }
+                            }
+                        }
                         Text("SELECTED BAND  ·  ${selectedBand + 1}", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                         Text("Center frequency and Q are independently adjustable for each band.", color = Muted, fontSize = 11.sp)
                         val selectedFrequency = frequencies[selectedBand]
@@ -223,6 +291,22 @@ private fun ProDspScreen() {
                 Text("31-band-capable biquad bank · coefficient smoothing · per-channel filter state · PCM peak protection. App-local playback processing; other apps are not automatically routed through it.", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
                 Spacer(Modifier.height(24.dp))
             }
+        }
+        if (showSaveDialog) {
+            AlertDialog(
+                onDismissRequest = { showSaveDialog = false },
+                title = { Text("Save custom preset") },
+                text = {
+                    OutlinedTextField(
+                        value = presetName,
+                        onValueChange = { presetName = it.take(24) },
+                        label = { Text("Preset name") },
+                        singleLine = true
+                    )
+                },
+                confirmButton = { TextButton(onClick = { savePreset(presetName) }, enabled = presetName.isNotBlank()) { Text("Save") } },
+                dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") } }
+            )
         }
     }
 }
