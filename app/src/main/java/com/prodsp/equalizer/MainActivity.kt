@@ -529,18 +529,36 @@ private fun ProDspFader(value: Float, min: Float, max: Float, modifier: Modifier
 private fun ProDspKnob(label: String, value: Float, min: Float, max: Float, format: String, onValue: (Float) -> Unit) {
     val display = if (label == "FREQ") formatFrequency(value) else String.format(Locale.US, format, value)
     var dragStartValue by remember(label) { mutableFloatStateOf(value) }
+    var dragStartNorm by remember(label) { mutableFloatStateOf(0.5f) }
     val latestValue by rememberUpdatedState(value)
+    val logarithmic = label == "FREQ"
+    fun normalized(value: Float): Float {
+        return if (logarithmic) {
+            ((ln(value.coerceIn(min, max)) - ln(min)) / (ln(max) - ln(min))).coerceIn(0f, 1f)
+        } else {
+            ((value - min) / (max - min)).coerceIn(0f, 1f)
+        }
+    }
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(94.dp)) {
         Text(label, color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         Canvas(Modifier.size(66.dp).pointerInput(label, min, max) {
-            detectDragGestures(onDragStart = { dragStartValue = latestValue }, onDrag = { change, amount ->
-                dragStartValue = (dragStartValue - amount.y * (max - min) / 260f).coerceIn(min, max)
-                onValue(dragStartValue)
+            detectDragGestures(onDragStart = {
+                dragStartValue = latestValue
+                dragStartNorm = normalized(latestValue)
+            }, onDrag = { _, amount ->
+                if (logarithmic) {
+                    dragStartNorm = (dragStartNorm - amount.y / 260f).coerceIn(0f, 1f)
+                    val hz = exp(ln(min) + dragStartNorm * (ln(max) - ln(min)))
+                    onValue(hz.coerceIn(min, max))
+                } else {
+                    dragStartValue = (dragStartValue - amount.y * (max - min) / 260f).coerceIn(min, max)
+                    onValue(dragStartValue)
+                }
             })
         }) {
             val stroke = 5.dp.toPx()
             val radius = size.minDimension / 2f - stroke
-            val sweep = ((value - min) / (max - min)).coerceIn(0f, 1f) * 270f
+            val sweep = normalized(value) * 270f
             drawArc(Color(0xFF30363C), 135f, 270f, false, style = Stroke(stroke, cap = StrokeCap.Round))
             drawArc(Accent, 135f, sweep, false, style = Stroke(stroke, cap = StrokeCap.Round))
             drawCircle(Color(0xFF171B20), radius - 4.dp.toPx())
