@@ -102,6 +102,9 @@ private fun ProDspScreen() {
     var preamp by remember { mutableFloatStateOf(0f) }
     var lowTone by remember { mutableFloatStateOf(0f) }
     var highTone by remember { mutableFloatStateOf(0f) }
+    var lowToneFrequency by remember { mutableFloatStateOf(120f) }
+    var highToneFrequency by remember { mutableFloatStateOf(8_000f) }
+    var balance by remember { mutableFloatStateOf(0f) }
     var bass by remember { mutableFloatStateOf(0f) }
     var width by remember { mutableFloatStateOf(100f) }
     var virtualizerStrength by remember { mutableFloatStateOf(0f) }
@@ -236,6 +239,9 @@ private fun ProDspScreen() {
             .put("preamp", preamp)
             .put("lowTone", lowTone)
             .put("highTone", highTone)
+            .put("lowToneFrequency", lowToneFrequency)
+            .put("highToneFrequency", highToneFrequency)
+            .put("stereoBalance", balance)
             .put("bass", bass)
             .put("stereoWidth", width)
             .put("virtualizerStrength", virtualizerStrength)
@@ -281,11 +287,17 @@ private fun ProDspScreen() {
             preamp = data.optDouble("preamp", 0.0).toFloat()
             lowTone = data.optDouble("lowTone", 0.0).toFloat()
             highTone = data.optDouble("highTone", 0.0).toFloat()
+            lowToneFrequency = data.optDouble("lowToneFrequency", 120.0).toFloat().coerceIn(30f, 800f)
+            highToneFrequency = data.optDouble("highToneFrequency", 8_000.0).toFloat().coerceIn(1_000f, 18_000f)
+            balance = data.optDouble("stereoBalance", 0.0).toFloat().coerceIn(-100f, 100f)
             bass = data.optDouble("bass", 0.0).toFloat()
             width = data.optDouble("stereoWidth", 100.0).toFloat().coerceIn(0f, 200f)
             virtualizerStrength = data.optDouble("virtualizerStrength", 0.0).toFloat().coerceIn(0f, 100f)
             dsp.setLowToneGain(lowTone)
             dsp.setHighToneGain(highTone)
+            dsp.setLowToneFrequency(lowToneFrequency)
+            dsp.setHighToneFrequency(highToneFrequency)
+            dsp.setStereoBalance(balance)
             dsp.setStereoWidth(width)
             deviceEffects.setBassStrength((bass * 10).toInt())
             deviceEffects.setVirtualizerStrength((virtualizerStrength * 10).toInt())
@@ -463,7 +475,7 @@ private fun ProDspScreen() {
                                 Text("FREQUENCY RESPONSE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text("LIVE", color = SpectrumGreen, fontSize = 9.sp)
                             }
-                            FrequencyResponseGraph(frequencies, gains, bandQs, bandTypes, bandCount, dspOn, lowTone, highTone)
+                            FrequencyResponseGraph(frequencies, gains, bandQs, bandTypes, bandCount, dspOn, lowTone, highTone, lowToneFrequency, highToneFrequency)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("20 Hz", color = Muted, fontSize = 8.sp); Text("1 kHz", color = Muted, fontSize = 8.sp); Text("20 kHz", color = Muted, fontSize = 8.sp)
                             }
@@ -484,6 +496,8 @@ private fun ProDspScreen() {
                                 ProDspKnob("LOW TONE", lowTone, -12f, 12f, "%+.1f dB") { lowTone = it; dsp.setLowToneGain(it) }
                                 ProDspKnob("HIGH TONE", highTone, -12f, 12f, "%+.1f dB") { highTone = it; dsp.setHighToneGain(it) }
                             }
+                            ValueSlider("Low shelf frequency", lowToneFrequency, { lowToneFrequency = it; dsp.setLowToneFrequency(it) }, 30f..800f, "%.0f Hz")
+                            ValueSlider("High shelf frequency", highToneFrequency, { highToneFrequency = it; dsp.setHighToneFrequency(it) }, 1_000f..18_000f, "%.0f Hz")
                             Divider(color = Color(0xFF252B30))
                             Text("DEVICE EFFECTS", color = Muted, fontSize = 9.sp, letterSpacing = 1.5.sp)
                             ValueSlider("Bass enhancement", bass, { bass = it; deviceEffects.setBassStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
@@ -491,7 +505,8 @@ private fun ProDspScreen() {
                             Divider(color = Color(0xFF252B30))
                             Text("STEREO IMAGE · PCM DSP", color = Muted, fontSize = 9.sp, letterSpacing = 1.5.sp)
                             ValueSlider("Stereo width", width, { width = it; dsp.setStereoWidth(it) }, 0f..200f, "%.0f%%")
-                            Text("100% = original stereo · 0% = mono · above 100% = wider image", color = Muted, fontSize = 10.sp)
+                            ValueSlider("Left / right balance", balance, { balance = it; dsp.setStereoBalance(it) }, -100f..100f, "%+.0f")
+                            Text("100% width = original stereo · 0% = mono · above 100% = wider image", color = Muted, fontSize = 10.sp)
                             Text("Device virtualizer availability depends on Android and the audio route.", color = Muted, fontSize = 10.sp)
                         }
                     }
@@ -683,7 +698,9 @@ private fun FrequencyResponseGraph(
     bandCount: Int,
     enabled: Boolean,
     lowToneDb: Float,
-    highToneDb: Float
+    highToneDb: Float,
+    lowToneFrequencyHz: Float,
+    highToneFrequencyHz: Float
 ) {
     // Snapshot the EQ controls and cache the curve. The live spectrum updates
     // frequently; they should not force expensive biquad/trigonometric work.
@@ -693,7 +710,7 @@ private fun FrequencyResponseGraph(
     val qValues = qs.take(activeCount)
     val typeValues = types.take(activeCount)
     val curveValues = remember(
-        frequencyValues, gainValues, qValues, typeValues, enabled, lowToneDb, highToneDb
+        frequencyValues, gainValues, qValues, typeValues, enabled, lowToneDb, highToneDb, lowToneFrequencyHz, highToneFrequencyHz
     ) {
         FloatArray(221) { point ->
             val fraction = point / 220f
@@ -713,10 +730,10 @@ private fun FrequencyResponseGraph(
                     totalDb += BiquadMath.magnitudeDb(coefficients, hz, 48_000)
                 }
                 val lowShelf = BiquadMath.coefficients(
-                    48_000, 120f, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF
+                    48_000, lowToneFrequencyHz, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF
                 )
                 val highShelf = BiquadMath.coefficients(
-                    48_000, 8_000f, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF
+                    48_000, highToneFrequencyHz, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF
                 )
                 totalDb += BiquadMath.magnitudeDb(lowShelf, hz, 48_000)
                 totalDb += BiquadMath.magnitudeDb(highShelf, hz, 48_000)
