@@ -56,6 +56,12 @@ private val BandPalette = listOf(Color(0xFF9B9A32), Color(0xFF173A9D), Color(0xF
 private val Muted = Color(0xFF9AA4AF)
 private val Panel = Color(0xFF171D22)
 
+private data class ParametricBackup(
+    val frequencies: FloatArray,
+    val qValues: FloatArray,
+    val filterTypes: Array<BiquadFilterType>
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -90,6 +96,7 @@ private fun ProDspScreen() {
     var limiterCeiling by remember { mutableFloatStateOf(-1f) }
     var bandCount by remember { mutableIntStateOf(10) }
     var parametricMode by remember { mutableStateOf(false) }
+    var parametricBackup by remember { mutableStateOf<ParametricBackup?>(null) }
     var selectedBand by remember { mutableIntStateOf(0) }
     val frequencies = remember { mutableStateListOf<Float>().apply {
         val initialLayout = EqBandLayout.frequencies(10)
@@ -210,10 +217,15 @@ private fun ProDspScreen() {
     }
 
     fun setParametricMode(enabled: Boolean) {
-        parametricMode = enabled
+        if (enabled == parametricMode) return
         if (!enabled) {
-            // Graphic mode uses evenly spaced logarithmic centres and peak
-            // filters. Parametric values remain available after switching back.
+            // Keep the user's parametric curve while showing the fixed-band
+            // graphic editor. Switching back restores these filter controls.
+            parametricBackup = ParametricBackup(
+                FloatArray(bandCount) { frequencies[it] },
+                FloatArray(bandCount) { bandQs[it] },
+                Array(bandCount) { bandTypes[it] }
+            )
             val graphicFrequencies = EqBandLayout.frequencies(bandCount)
             for (index in 0 until bandCount) {
                 frequencies[index] = graphicFrequencies[index]
@@ -223,7 +235,22 @@ private fun ProDspScreen() {
                 dsp.setBandQ(index, bandQs[index])
                 dsp.setBandType(index, BiquadFilterType.PEAK)
             }
+        } else {
+            val saved = parametricBackup
+            if (saved != null && saved.frequencies.isNotEmpty()) {
+                val targetFrequencies = EqBandLayout.frequencies(bandCount)
+                val nearest = EqBandLayout.nearestSourceIndices(saved.frequencies, targetFrequencies)
+                for (index in 0 until bandCount) {
+                    frequencies[index] = saved.frequencies[nearest[index]]
+                    bandQs[index] = saved.qValues[nearest[index]].coerceIn(0.3f, 8f)
+                    bandTypes[index] = saved.filterTypes[nearest[index]]
+                    dsp.setBandFrequency(index, frequencies[index])
+                    dsp.setBandQ(index, bandQs[index])
+                    dsp.setBandType(index, bandTypes[index])
+                }
+            }
         }
+        parametricMode = enabled
     }
 
     fun savePreset(nameInput: String) {
