@@ -1,6 +1,10 @@
 package com.prodsp.equalizer
 
+import android.Manifest
+import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,13 +38,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.MoreExecutors
 import java.util.Locale
 import kotlin.math.exp
 import kotlin.math.cos
@@ -87,6 +92,11 @@ private data class EqCompareSlot(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1201)
+        }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Accent, secondary = Color(0xFF73D6C2), background = Color(0xFF0B0D10), surface = Panel)) {
                 ProDspScreen()
@@ -99,20 +109,54 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun ProDspScreen() {
     val context = LocalContext.current
-    val dsp = remember { ParametricDspProcessor() }
-    val player = remember {
-        ExoPlayer.Builder(context, ProDspRenderersFactory(context, dsp)).build().apply {
-            setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true
-            )
-            setHandleAudioBecomingNoisy(true)
+    val sessionToken = remember(context) {
+        SessionToken(context, ComponentName(context, ProDspPlaybackService::class.java))
+    }
+    val controllerFuture = remember(sessionToken) {
+        MediaController.Builder(context, sessionToken).buildAsync()
+    }
+    var controller by remember { mutableStateOf<MediaController?>(null) }
+    var connectionFailed by remember { mutableStateOf(false) }
+
+    DisposableEffect(controllerFuture) {
+        val listener = Runnable {
+            try {
+                controller = controllerFuture.get()
+            } catch (_: Exception) {
+                connectionFailed = true
+            }
+        }
+        controllerFuture.addListener(listener, MoreExecutors.directExecutor())
+        onDispose { MediaController.releaseFuture(controllerFuture) }
+    }
+
+    val connectedController = controller
+    if (connectedController != null) {
+        ProDspContent(connectedController)
+    } else {
+        Surface(Modifier.fillMaxSize(), color = Color(0xFF050607)) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (!connectionFailed) CircularProgressIndicator(color = Accent)
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        if (connectionFailed) "AUDIO SERVICE CONNECTION FAILED" else "CONNECTING AUDIO ENGINE",
+                        color = if (connectionFailed) Accent else Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
     }
-    val deviceEffects = remember { AudioEffectsEngine() }
+}
+
+@OptIn(UnstableApi::class)
+@Composable
+private fun ProDspContent(player: MediaController) {
+    val context = LocalContext.current
+    val dsp = ProDspAudioEngine.processor
+    val deviceEffects = ProDspAudioEngine.deviceEffects
     var trackName by remember { mutableStateOf("No track selected") }
     var queueCount by remember { mutableIntStateOf(0) }
     var currentPositionMs by remember { mutableLongStateOf(0L) }
@@ -176,15 +220,22 @@ private fun ProDspScreen() {
     val pagerState = rememberPagerState(pageCount = { pageTitles.size })
     val pageScope = rememberCoroutineScope()
     val maxBandFrequencyHz = minOf(20_000f, sampleRateHz * 0.475f).coerceAtLeast(20f)
-    val latestBass by rememberUpdatedState(bass)
-    val latestVirtualizerStrength by rememberUpdatedState(virtualizerStrength)
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
             uris.forEach { uri ->
                 try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
             }
-            val mediaItems = uris.map { uri -> MediaItem.fromUri(uri) }
+            val mediaItems = uris.map { uri ->
+                MediaItem.Builder()
+                    .setUri(uri)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(queryDisplayName(context, uri))
+                            .build()
+                    )
+                    .build()
+            }
             val replaceQueue = replaceQueueOnPick || player.mediaItemCount == 0
             if (replaceQueue) {
                 player.setMediaItems(mediaItems)
@@ -309,20 +360,9 @@ private fun ProDspScreen() {
                 playing = false
             }
         }
-        val analytics = object : AnalyticsListener {
-            override fun onAudioSessionIdChanged(eventTime: AnalyticsListener.EventTime, audioSessionId: Int) {
-                deviceEffects.attach(audioSessionId)
-                deviceEffects.setBassStrength((latestBass * 10).toInt())
-                deviceEffects.setVirtualizerStrength((latestVirtualizerStrength * 10).toInt())
-            }
-        }
         player.addListener(listener)
-        player.addAnalyticsListener(analytics)
         onDispose {
             player.removeListener(listener)
-            player.removeAnalyticsListener(analytics)
-            player.release()
-            deviceEffects.release()
         }
     }
 
