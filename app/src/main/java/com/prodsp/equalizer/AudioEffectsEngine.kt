@@ -7,12 +7,13 @@ import android.media.audiofx.Virtualizer
 class AudioEffectsEngine {
     private var bassBoost: BassBoost? = null
     private var virtualizer: Virtualizer? = null
+    @Volatile private var effectsEnabled = true
 
     fun attach(audioSessionId: Int) {
         release()
         if (audioSessionId <= 0) return
-        bassBoost = try { BassBoost(0, audioSessionId).also { it.enabled = true } } catch (_: Exception) { null }
-        virtualizer = try { Virtualizer(0, audioSessionId).also { it.enabled = true } } catch (_: Exception) { null }
+        bassBoost = try { BassBoost(0, audioSessionId).also { it.enabled = effectsEnabled } } catch (_: Exception) { null }
+        virtualizer = try { Virtualizer(0, audioSessionId).also { it.enabled = effectsEnabled } } catch (_: Exception) { null }
     }
 
     fun setBassStrength(value: Int) {
@@ -21,6 +22,12 @@ class AudioEffectsEngine {
 
     fun setVirtualizerStrength(value: Int) {
         try { virtualizer?.setStrength(value.coerceIn(0, 1000).toShort()) } catch (_: Exception) { }
+    }
+
+    fun setEnabled(enabled: Boolean) {
+        effectsEnabled = enabled
+        try { bassBoost?.enabled = enabled } catch (_: Exception) { }
+        try { virtualizer?.enabled = enabled } catch (_: Exception) { }
     }
 
     fun release() {
