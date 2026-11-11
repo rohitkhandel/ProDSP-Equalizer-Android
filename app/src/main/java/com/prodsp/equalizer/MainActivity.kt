@@ -562,7 +562,6 @@ private fun ProDspScreen() {
                                         onClick = { setParametricMode(true) },
                                         label = { Text("PARAMETRIC", fontSize = 9.sp) },
                                         modifier = Modifier.height(29.dp),
-                                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)
                                     )
                                 }
                             }
