@@ -534,8 +534,8 @@ private fun ProDspScreen() {
                         Column(Modifier.fillMaxSize().padding(horizontal = 12.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Column {
-                                    Text("PARAMETRIC EQ", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                                    Text("20 Hz — 20 kHz · ${bandCount} active bands", color = Muted, fontSize = 8.sp)
+                                    Text(if (parametricMode) "PARAMETRIC EQ" else "GRAPHIC EQ", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    Text("20 Hz — ${formatFrequency(maxBandFrequencyHz)} · ${bandCount} bands · ${sampleRateHz / 1000} kHz", color = Muted, fontSize = 8.sp)
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
                                     listOf(10, 15, 20, 31).forEach { count ->
