@@ -76,7 +76,34 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     private var currentStereoWidth = 1f
     private var currentStereoBalance = 0f
 
-    data class Snapshot(val bandCount: Int, val gainsDb: FloatArray, val centerFrequencies: FloatArray, val qValues: FloatArray, val bandTypes: Array<BiquadFilterType>, val bandEnabled: BooleanArray, val preampDb: Float, val enabled: Boolean, val peakGuard: Boolean)
+    data class Snapshot(
+        val bandCount: Int,
+        val gainsDb: FloatArray,
+        val centerFrequencies: FloatArray,
+        val qValues: FloatArray,
+        val bandTypes: Array<BiquadFilterType>,
+        val bandEnabled: BooleanArray,
+        val soloBandIndex: Int,
+        val preampDb: Float,
+        val autoHeadroomEnabled: Boolean,
+        val enabled: Boolean,
+        val peakGuard: Boolean,
+        val lowToneDb: Float,
+        val highToneDb: Float,
+        val lowToneFrequencyHz: Float,
+        val highToneFrequencyHz: Float,
+        val compressorEnabled: Boolean,
+        val compressorThresholdDb: Float,
+        val compressorRatio: Float,
+        val compressorAttackMs: Float,
+        val compressorReleaseMs: Float,
+        val compressorMakeupDb: Float,
+        val limiterEnabled: Boolean,
+        val limiterCeilingDb: Float,
+        val limiterReleaseMs: Float,
+        val stereoWidthPercent: Float,
+        val stereoBalancePercent: Float
+    )
 
     @Synchronized fun bandFrequency(index: Int): Float = centerFrequencies.getOrElse(index) { 1000f }
     @Synchronized fun bandQ(index: Int): Float = qValues.getOrElse(index) { 1f }
@@ -179,7 +206,34 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     fun setLimiterRelease(valueMs: Float) { limiterReleaseMs = valueMs.coerceIn(10f, 500f) }
     fun setStereoWidth(percent: Float) { stereoWidth = percent.coerceIn(0f, 200f) / 100f }
     fun setStereoBalance(percent: Float) { stereoBalance = percent.coerceIn(-100f, 100f) }
-    @Synchronized fun snapshot() = Snapshot(bandCount, gainsDb.copyOf(), centerFrequencies.copyOf(), qValues.copyOf(), bandTypes.copyOf(), bandEnabled.copyOf(), preampDb, enabled, peakGuard)
+    @Synchronized fun snapshot() = Snapshot(
+        bandCount = bandCount,
+        gainsDb = gainsDb.copyOf(),
+        centerFrequencies = centerFrequencies.copyOf(),
+        qValues = qValues.copyOf(),
+        bandTypes = bandTypes.copyOf(),
+        bandEnabled = bandEnabled.copyOf(),
+        soloBandIndex = soloBandIndex,
+        preampDb = preampDb,
+        autoHeadroomEnabled = autoHeadroomEnabled,
+        enabled = enabled,
+        peakGuard = peakGuard,
+        lowToneDb = lowToneDb,
+        highToneDb = highToneDb,
+        lowToneFrequencyHz = lowToneFrequencyHz,
+        highToneFrequencyHz = highToneFrequencyHz,
+        compressorEnabled = compressorEnabled,
+        compressorThresholdDb = compressorThresholdDb,
+        compressorRatio = compressorRatio,
+        compressorAttackMs = compressorAttackMs,
+        compressorReleaseMs = compressorReleaseMs,
+        compressorMakeupDb = compressorMakeupDb,
+        limiterEnabled = limiterEnabled,
+        limiterCeilingDb = limiterCeilingDb,
+        limiterReleaseMs = limiterReleaseMs,
+        stereoWidthPercent = stereoWidth * 100f,
+        stereoBalancePercent = stereoBalance
+    )
 
     fun spectrumSnapshot(): FloatArray = spectrumBands.copyOf()
     fun currentSampleRate(): Int = sampleRate.takeIf { it > 0 } ?: 48_000
