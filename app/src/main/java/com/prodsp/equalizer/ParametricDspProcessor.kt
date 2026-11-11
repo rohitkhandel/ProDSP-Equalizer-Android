@@ -62,6 +62,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Synchronized fun configureBands(count: Int) {
         bandCount = BAND_COUNTS.minBy { abs(it - count) }
         centerFrequencies = FloatArray(31) { i -> defaultFrequency(i, bandCount) }
+        qValues = FloatArray(31) { 1f }
         updateTargets()
     }
 
@@ -243,7 +244,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val w0 = (2.0 * PI * frequency.coerceIn(20f, rate * 0.45f) / rate).toFloat()
         val cosine = cos(w0)
         val sine = sin(w0)
-        val alpha = sine * 0.5f * sqrt((a + 1f / a) * 0f + 2f)
+        val alpha = sine * 0.5f * sqrt(2f)
         val beta = 2f * sqrt(a) * alpha
         val a0: Float
         val b0: Float
