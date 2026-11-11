@@ -8,20 +8,30 @@ class AudioEffectsEngine {
     private var bassBoost: BassBoost? = null
     private var virtualizer: Virtualizer? = null
     @Volatile private var effectsEnabled = true
+    @Volatile private var bassStrength = 0
+    @Volatile private var virtualizerStrength = 0
 
     fun attach(audioSessionId: Int) {
         release()
         if (audioSessionId <= 0) return
         bassBoost = try { BassBoost(0, audioSessionId).also { it.enabled = effectsEnabled } } catch (_: Exception) { null }
         virtualizer = try { Virtualizer(0, audioSessionId).also { it.enabled = effectsEnabled } } catch (_: Exception) { null }
+        applyStoredStrengths()
     }
 
     fun setBassStrength(value: Int) {
-        try { bassBoost?.setStrength(value.coerceIn(0, 1000).toShort()) } catch (_: Exception) { }
+        bassStrength = value.coerceIn(0, 1000)
+        try { bassBoost?.setStrength(bassStrength.toShort()) } catch (_: Exception) { }
     }
 
     fun setVirtualizerStrength(value: Int) {
-        try { virtualizer?.setStrength(value.coerceIn(0, 1000).toShort()) } catch (_: Exception) { }
+        virtualizerStrength = value.coerceIn(0, 1000)
+        try { virtualizer?.setStrength(virtualizerStrength.toShort()) } catch (_: Exception) { }
+    }
+
+    private fun applyStoredStrengths() {
+        try { bassBoost?.setStrength(bassStrength.toShort()) } catch (_: Exception) { }
+        try { virtualizer?.setStrength(virtualizerStrength.toShort()) } catch (_: Exception) { }
     }
 
     fun setEnabled(enabled: Boolean) {
