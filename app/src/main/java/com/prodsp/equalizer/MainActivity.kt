@@ -226,8 +226,8 @@ private fun ProDspScreen() {
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                 shuffleEnabled = shuffleModeEnabled
             }
-            override fun onRepeatModeChanged(repeatMode: Int) {
-                this@ProDspScreen.repeatMode = repeatMode
+            override fun onRepeatModeChanged(mode: Int) {
+                repeatMode = mode
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 status = "Playback error: ${error.errorCodeName}"
