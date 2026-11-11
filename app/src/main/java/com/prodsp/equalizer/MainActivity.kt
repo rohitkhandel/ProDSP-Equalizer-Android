@@ -157,8 +157,8 @@ private fun ProDspContent(player: MediaController) {
     val context = LocalContext.current
     val dsp = ProDspAudioEngine.processor
     val deviceEffects = ProDspAudioEngine.deviceEffects
-    var trackName by remember { mutableStateOf("No track selected") }
-    var queueCount by remember { mutableIntStateOf(0) }
+    var trackName by remember(player) { mutableStateOf(player.currentMediaItem?.mediaMetadata?.title?.toString() ?: "No track selected") }
+    var queueCount by remember(player) { mutableIntStateOf(player.mediaItemCount) }
     var currentPositionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var seeking by remember { mutableStateOf(false) }
@@ -166,9 +166,9 @@ private fun ProDspContent(player: MediaController) {
     var status by remember { mutableStateOf("Choose a music file to start") }
     var spectrum by remember { mutableStateOf(FloatArray(48)) }
     var sampleRateHz by remember { mutableIntStateOf(48_000) }
-    var playing by remember { mutableStateOf(false) }
-    var shuffleEnabled by remember { mutableStateOf(false) }
-    var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
+    var playing by remember(player) { mutableStateOf(player.isPlaying) }
+    var shuffleEnabled by remember(player) { mutableStateOf(player.shuffleModeEnabled) }
+    var repeatMode by remember(player) { mutableIntStateOf(player.repeatMode) }
     var dspOn by remember { mutableStateOf(true) }
     var peakGuard by remember { mutableStateOf(true) }
     var compressorOn by remember { mutableStateOf(false) }
