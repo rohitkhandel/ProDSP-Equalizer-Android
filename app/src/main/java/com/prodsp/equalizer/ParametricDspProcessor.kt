@@ -369,10 +369,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     }
 
     @Synchronized private fun updateTargets() {
-        if (sampleRate <= 0 || filters.isEmpty()) {
-            ProDspAudioEngine.notifySettingsChanged()
-            return
-        }
+        if (sampleRate <= 0 || filters.isEmpty()) return
         val count = bandCount
         val gains = gainsDb.copyOf()
         val frequencies = centerFrequencies.copyOf()
@@ -412,7 +409,6 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             automaticHeadroomDb = 0f
         }
         transitionRemaining = (sampleRate * 0.02f).toInt().coerceAtLeast(1)
-        ProDspAudioEngine.notifySettingsChanged()
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
