@@ -122,6 +122,7 @@ private fun ProDspScreen() {
     } }
     var showSaveDialog by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
+    var pendingExportJson by remember { mutableStateOf<String?>(null) }
     val pageTitles = listOf("EQUALIZER", "TONE", "DYNAMICS", "PRESETS")
     val pagerState = rememberPagerState(pageCount = { pageTitles.size })
     val pageScope = rememberCoroutineScope()
@@ -134,6 +135,45 @@ private fun ProDspScreen() {
             player.play()
             trackName = uri.lastPathSegment?.substringAfterLast('/') ?: "Selected audio"
             status = "Loading audio…"
+        }
+    }
+
+    val exportPresetLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        val json = pendingExportJson
+        if (uri != null && json != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { output ->
+                    output.write(json.toByteArray(Charsets.UTF_8))
+                } ?: throw IllegalStateException("Could not open export destination")
+                status = "Preset exported successfully"
+            } catch (error: Exception) {
+                status = "Preset export failed: ${error.message ?: "storage error"}"
+            }
+        }
+        pendingExportJson = null
+    }
+
+    val importPresetLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val raw = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: throw IllegalStateException("Could not read preset file")
+                val wrapper = JSONObject(raw)
+                val name = wrapper.optString("name", "Imported preset").trim().take(24).ifBlank { "Imported preset" }
+                val settings = wrapper.optJSONObject("settings") ?: wrapper
+                preferences.edit()
+                    .putString("preset_$name", settings.toString())
+                    .putStringSet("names", savedPresets.toSet() + name)
+                    .apply()
+                if (name !in savedPresets) savedPresets.add(name)
+                status = "Imported preset: $name"
+            } catch (error: Exception) {
+                status = "Preset import failed: ${error.message ?: "invalid file"}"
+            }
         }
     }
 
@@ -252,6 +292,27 @@ private fun ProDspScreen() {
             }
         }
         parametricMode = enabled
+    }
+
+    fun deletePreset(name: String) {
+        val remaining = savedPresets.filterNot { it == name }.toSet()
+        preferences.edit()
+            .remove("preset_$name")
+            .putStringSet("names", remaining)
+            .apply()
+        savedPresets.remove(name)
+    }
+
+    fun exportPreset(name: String) {
+        val raw = preferences.getString("preset_$name", null) ?: return
+        pendingExportJson = JSONObject()
+            .put("schemaVersion", 1)
+            .put("app", "ProDSP Equalizer")
+            .put("name", name)
+            .put("settings", JSONObject(raw))
+            .toString(2)
+        val safeFileName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "preset" }
+        exportPresetLauncher.launch("$safeFileName.prodsp.json")
     }
 
     fun savePreset(nameInput: String) {
@@ -570,9 +631,23 @@ private fun ProDspScreen() {
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text("CUSTOM PRESETS", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
-                                TextButton(onClick = { showSaveDialog = true }) { Text("+ SAVE", color = Accent) }
+                                Row {
+                                    TextButton(onClick = { importPresetLauncher.launch(arrayOf("application/json", "text/json", "*/*")) }) { Text("IMPORT", color = Muted, fontSize = 10.sp) }
+                                    TextButton(onClick = { showSaveDialog = true }) { Text("+ SAVE", color = Accent, fontSize = 10.sp) }
+                                }
                             }
-                            savedPresets.forEach { name -> TextButton(onClick = { loadPreset(name) }, modifier = Modifier.fillMaxWidth()) { Text(name, color = Color.White) } }
+                            if (savedPresets.isEmpty()) {
+                                Text("No custom presets saved yet.", color = Muted, fontSize = 11.sp)
+                            }
+                            savedPresets.forEach { name ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    TextButton(onClick = { loadPreset(name) }, modifier = Modifier.weight(1f)) {
+                                        Text(name, color = Color.White, maxLines = 1)
+                                    }
+                                    TextButton(onClick = { exportPreset(name) }) { Text("EXPORT", color = Muted, fontSize = 9.sp) }
+                                    TextButton(onClick = { deletePreset(name) }) { Text("DELETE", color = Accent, fontSize = 9.sp) }
+                                }
+                            }
                             Divider(color = Color(0xFF252B30))
                             Text("LOCAL PLAYER", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
                             Text(trackName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
