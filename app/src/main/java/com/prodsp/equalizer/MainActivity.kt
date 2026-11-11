@@ -33,6 +33,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -79,7 +81,18 @@ class MainActivity : ComponentActivity() {
 private fun ProDspScreen() {
     val context = LocalContext.current
     val dsp = remember { ParametricDspProcessor() }
-    val player = remember { ExoPlayer.Builder(context, ProDspRenderersFactory(context, dsp)).build() }
+    val player = remember {
+        ExoPlayer.Builder(context, ProDspRenderersFactory(context, dsp)).build().apply {
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                true
+            )
+            setHandleAudioBecomingNoisy(true)
+        }
+    }
     val deviceEffects = remember { AudioEffectsEngine() }
     var trackName by remember { mutableStateOf("No track selected") }
     var queueCount by remember { mutableIntStateOf(0) }
