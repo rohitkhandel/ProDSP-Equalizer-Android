@@ -241,6 +241,70 @@ class ParametricDspProcessorTest {
     }
 
     @Test
+    fun snapshotContainsEveryLiveDspControlForUiRestoration() {
+        val processor = createProcessor()
+        try {
+            processor.configureBands(15)
+            processor.setBandFrequency(4, 1_250f)
+            processor.setBandGain(4, 5.5f)
+            processor.setBandQ(4, 1.7f)
+            processor.setBandType(4, BiquadFilterType.NOTCH)
+            processor.setBandEnabled(4, false)
+            processor.setSoloBand(3)
+            processor.setPreamp(-2.5f)
+            processor.setAutoHeadroom(true)
+            processor.setEnabled(false)
+            processor.setPeakGuard(true)
+            processor.setLowToneGain(3f)
+            processor.setHighToneGain(-2f)
+            processor.setLowToneFrequency(95f)
+            processor.setHighToneFrequency(9_500f)
+            processor.setCompressorEnabled(true)
+            processor.setCompressorThreshold(-22f)
+            processor.setCompressorRatio(4.5f)
+            processor.setCompressorAttack(7f)
+            processor.setCompressorRelease(180f)
+            processor.setCompressorMakeup(1.5f)
+            processor.setLimiterEnabled(true)
+            processor.setLimiterCeiling(-2f)
+            processor.setLimiterRelease(125f)
+            processor.setStereoWidth(145f)
+            processor.setStereoBalance(-25f)
+
+            val snapshot = processor.snapshot()
+
+            assertEquals(15, snapshot.bandCount)
+            assertEquals(1_250f, snapshot.centerFrequencies[4], 0.1f)
+            assertEquals(5.5f, snapshot.gainsDb[4], 0.001f)
+            assertEquals(1.7f, snapshot.qValues[4], 0.001f)
+            assertEquals(BiquadFilterType.NOTCH, snapshot.bandTypes[4])
+            assertEquals(false, snapshot.bandEnabled[4])
+            assertEquals(3, snapshot.soloBandIndex)
+            assertEquals(-2.5f, snapshot.preampDb, 0.001f)
+            assertEquals(true, snapshot.autoHeadroomEnabled)
+            assertEquals(false, snapshot.enabled)
+            assertEquals(true, snapshot.peakGuard)
+            assertEquals(3f, snapshot.lowToneDb, 0.001f)
+            assertEquals(-2f, snapshot.highToneDb, 0.001f)
+            assertEquals(95f, snapshot.lowToneFrequencyHz, 0.1f)
+            assertEquals(9_500f, snapshot.highToneFrequencyHz, 0.1f)
+            assertEquals(true, snapshot.compressorEnabled)
+            assertEquals(-22f, snapshot.compressorThresholdDb, 0.001f)
+            assertEquals(4.5f, snapshot.compressorRatio, 0.001f)
+            assertEquals(7f, snapshot.compressorAttackMs, 0.001f)
+            assertEquals(180f, snapshot.compressorReleaseMs, 0.001f)
+            assertEquals(1.5f, snapshot.compressorMakeupDb, 0.001f)
+            assertEquals(true, snapshot.limiterEnabled)
+            assertEquals(-2f, snapshot.limiterCeilingDb, 0.001f)
+            assertEquals(125f, snapshot.limiterReleaseMs, 0.001f)
+            assertEquals(145f, snapshot.stereoWidthPercent, 0.001f)
+            assertEquals(-25f, snapshot.stereoBalancePercent, 0.001f)
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
     fun preampSixDbProducesExpectedRmsIncreaseWithoutClipping() {
         val processor = createProcessor()
         try {
