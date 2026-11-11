@@ -149,12 +149,12 @@ private fun ProDspScreen() {
     val sessionToken = remember(context) {
         SessionToken(context, ComponentName(context, ProDspPlaybackService::class.java))
     }
+    var connectionAttempts by remember { mutableIntStateOf(0) }
     val controllerFuture = remember(sessionToken, connectionAttempts) {
         MediaController.Builder(context, sessionToken).buildAsync()
     }
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var connectionFailed by remember { mutableStateOf(false) }
-    var connectionAttempts by remember { mutableIntStateOf(0) }
 
     DisposableEffect(controllerFuture) {
         val listener = Runnable {
