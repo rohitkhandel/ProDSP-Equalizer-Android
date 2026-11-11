@@ -136,6 +136,8 @@ private fun ProDspScreen() {
     val pagerState = rememberPagerState(pageCount = { pageTitles.size })
     val pageScope = rememberCoroutineScope()
     val maxBandFrequencyHz = minOf(20_000f, sampleRateHz * 0.475f).coerceAtLeast(20f)
+    val latestBass by rememberUpdatedState(bass)
+    val latestVirtualizerStrength by rememberUpdatedState(virtualizerStrength)
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
@@ -215,6 +217,20 @@ private fun ProDspScreen() {
         }
     }
 
+    LaunchedEffect(sampleRateHz) {
+        val safeMaximum = minOf(20_000f, sampleRateHz * 0.475f).coerceAtLeast(20f)
+        for (index in 0 until bandCount) {
+            if (frequencies[index] > safeMaximum) {
+                frequencies[index] = safeMaximum
+                dsp.setBandFrequency(index, safeMaximum)
+            }
+        }
+        lowToneFrequency = lowToneFrequency.coerceAtMost(minOf(800f, safeMaximum))
+        highToneFrequency = highToneFrequency.coerceAtMost(safeMaximum)
+        dsp.setLowToneFrequency(lowToneFrequency)
+        dsp.setHighToneFrequency(highToneFrequency)
+    }
+
     LaunchedEffect(player) {
         while (true) {
             val playerDuration = player.duration
@@ -254,8 +270,8 @@ private fun ProDspScreen() {
         val analytics = object : AnalyticsListener {
             override fun onAudioSessionIdChanged(eventTime: AnalyticsListener.EventTime, audioSessionId: Int) {
                 deviceEffects.attach(audioSessionId)
-                deviceEffects.setBassStrength((bass * 10).toInt())
-                deviceEffects.setVirtualizerStrength((virtualizerStrength * 10).toInt())
+                deviceEffects.setBassStrength((latestBass * 10).toInt())
+                deviceEffects.setVirtualizerStrength((latestVirtualizerStrength * 10).toInt())
             }
         }
         player.addListener(listener)
@@ -283,7 +299,7 @@ private fun ProDspScreen() {
         val oldGains = FloatArray(oldCount) { gains[it] }
         val oldQs = FloatArray(oldCount) { bandQs[it] }
         val oldTypes = (0 until oldCount).map { bandTypes[it] }
-        val nextFrequencies = EqBandLayout.frequencies(safeCount)
+        val nextFrequencies = EqBandLayout.frequencies(safeCount, maxHz = maxBandFrequencyHz)
         val nextGains = EqBandLayout.resampleGains(oldFrequencies, oldGains, nextFrequencies)
         val nextQs = EqBandLayout.resampleNearest(oldFrequencies, oldQs, nextFrequencies)
         val nearestOldIndices = EqBandLayout.nearestSourceIndices(oldFrequencies, nextFrequencies)
@@ -318,7 +334,7 @@ private fun ProDspScreen() {
                 FloatArray(bandCount) { bandQs[it] },
                 Array(bandCount) { bandTypes[it] }
             )
-            val graphicFrequencies = EqBandLayout.frequencies(bandCount)
+            val graphicFrequencies = EqBandLayout.frequencies(bandCount, maxHz = maxBandFrequencyHz)
             for (index in 0 until bandCount) {
                 frequencies[index] = graphicFrequencies[index]
                 bandQs[index] = 1f
