@@ -238,10 +238,11 @@ private fun ProDspScreen() {
         } else {
             val saved = parametricBackup
             if (saved != null && saved.frequencies.isNotEmpty()) {
-                val targetFrequencies = EqBandLayout.frequencies(bandCount)
+                val sameBandCount = saved.frequencies.size == bandCount
+                val targetFrequencies = if (sameBandCount) saved.frequencies else EqBandLayout.frequencies(bandCount)
                 val nearest = EqBandLayout.nearestSourceIndices(saved.frequencies, targetFrequencies)
                 for (index in 0 until bandCount) {
-                    frequencies[index] = saved.frequencies[nearest[index]]
+                    frequencies[index] = targetFrequencies[index]
                     bandQs[index] = saved.qValues[nearest[index]].coerceIn(0.3f, 8f)
                     bandTypes[index] = saved.filterTypes[nearest[index]]
                     dsp.setBandFrequency(index, frequencies[index])
@@ -295,6 +296,7 @@ private fun ProDspScreen() {
             val data = JSONObject(raw)
             bandCount = data.optInt("bandCount", 10).coerceIn(1, 31)
             parametricMode = data.optBoolean("parametricMode", false)
+            parametricBackup = null
             dsp.configureBands(bandCount)
             val savedGains = data.optJSONArray("gains") ?: JSONArray()
             val savedFrequencies = data.optJSONArray("frequencies") ?: JSONArray()
