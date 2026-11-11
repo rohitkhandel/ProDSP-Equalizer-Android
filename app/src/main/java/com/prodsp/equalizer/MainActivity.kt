@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,6 +15,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -25,6 +28,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import java.util.Locale
 import kotlin.math.exp
+import kotlin.math.cos
+import kotlin.math.sqrt
 import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.sin
@@ -248,6 +253,7 @@ private fun ProDspScreen() {
                                 }
                             }
                         }
+                        FrequencyResponseGraph(frequencies, gains, bandQs, bandCount, dspOn, lowTone, highTone)
                         Text("SELECTED BAND  ·  ${selectedBand + 1}", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                         Text("Center frequency and Q are independently adjustable for each band.", color = Muted, fontSize = 11.sp)
                         val selectedFrequency = frequencies[selectedBand]
@@ -337,3 +343,120 @@ private fun bandFrequency(index: Int, count: Int): Float =
 
 private fun formatFrequency(hz: Float): String =
     if (hz >= 1000f) String.format(Locale.US, "%.2f kHz", hz / 1000f) else String.format(Locale.US, "%.0f Hz", hz)
+
+@Composable
+private fun FrequencyResponseGraph(
+    frequencies: List<Float>,
+    gains: List<Float>,
+    qs: List<Float>,
+    bandCount: Int,
+    enabled: Boolean,
+    lowToneDb: Float,
+    highToneDb: Float
+) {
+    Canvas(Modifier.fillMaxWidth().height(154.dp)) {
+        val left = 8f
+        val right = size.width - 8f
+        val top = 8f
+        val bottom = size.height - 8f
+        val graphWidth = right - left
+        val graphHeight = bottom - top
+        fun yFor(db: Float): Float = top + ((18f - db.coerceIn(-18f, 18f)) / 36f) * graphHeight
+        drawRoundRect(color = Color(0xFF10161B), size = size, cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()))
+        listOf(-15f, 0f, 15f).forEach { db ->
+            val y = yFor(db)
+            drawLine(Color(0xFF34414A), androidx.compose.ui.geometry.Offset(left, y), androidx.compose.ui.geometry.Offset(right, y), strokeWidth = if (db == 0f) 1.5f else 1f)
+        }
+        listOf(20f, 100f, 1000f, 10_000f, 20_000f).forEach { hz ->
+            val x = left + (ln(hz) - ln(20f)) / ln(1000f) * graphWidth
+            drawLine(Color(0xFF263139), androidx.compose.ui.geometry.Offset(x, top), androidx.compose.ui.geometry.Offset(x, bottom), strokeWidth = 1f)
+        }
+        val curve = Path()
+        val points = 220
+        for (point in 0..points) {
+            val fraction = point.toFloat() / points
+            val hz = 20f * 1000f.pow(fraction)
+            var totalDb = 0f
+            if (enabled) {
+                for (i in 0 until bandCount.coerceAtMost(minOf(frequencies.size, gains.size, qs.size))) {
+                    val gain = gains[i].coerceIn(-15f, 15f)
+                    if (kotlin.math.abs(gain) < 0.001f) continue
+                    totalDb += peakingMagnitudeDb(hz, frequencies[i], qs[i], gain)
+                }
+                totalDb += shelfMagnitudeDb(hz, 120f, lowToneDb, true)
+                totalDb += shelfMagnitudeDb(hz, 8_000f, highToneDb, false)
+            }
+            val x = left + fraction * graphWidth
+            val y = yFor(totalDb)
+            if (point == 0) curve.moveTo(x, y) else curve.lineTo(x, y)
+        }
+        drawPath(curve, color = if (enabled) Accent else Muted, style = Stroke(width = 2.5.dp.toPx()))
+    }
+}
+
+private fun peakingMagnitudeDb(frequency: Float, center: Float, q: Float, gainDb: Float): Float {
+    val rate = 48_000f
+    val a = 10.0.pow((gainDb / 40.0).toDouble()).toFloat()
+    val w0 = 2f * Math.PI.toFloat() * center.coerceIn(20f, 20_000f) / rate
+    val alpha = sin(w0) / (2f * q.coerceIn(0.3f, 8f))
+    val cosine = cos(w0)
+    val a0 = 1f + alpha / a
+    val b0 = (1f + alpha * a) / a0
+    val b1 = -2f * cosine / a0
+    val b2 = (1f - alpha * a) / a0
+    val a1 = b1
+    val a2 = (1f - alpha / a) / a0
+    val omega = 2f * Math.PI.toFloat() * frequency / rate
+    val c1 = cos(omega)
+    val s1 = sin(omega)
+    val c2 = cos(2f * omega)
+    val s2 = sin(2f * omega)
+    val nr = b0 + b1 * c1 + b2 * c2
+    val ni = -b1 * s1 - b2 * s2
+    val dr = 1f + a1 * c1 + a2 * c2
+    val di = -a1 * s1 - a2 * s2
+    val magnitude = sqrt((nr * nr + ni * ni) / (dr * dr + di * di).coerceAtLeast(1e-12f))
+    return 20f * kotlin.math.log10(magnitude.coerceAtLeast(1e-6f))
+}
+
+private fun shelfMagnitudeDb(frequency: Float, cutoff: Float, gainDb: Float, lowShelf: Boolean): Float {
+    if (kotlin.math.abs(gainDb) < 0.001f) return 0f
+    val rate = 48_000f
+    val a = 10.0.pow((gainDb / 40.0).toDouble()).toFloat()
+    val w0 = 2f * Math.PI.toFloat() * cutoff / rate
+    val cosine = cos(w0)
+    val alpha = sin(w0) * 0.5f * sqrt(2f)
+    val beta = 2f * sqrt(a) * alpha
+    val a0: Float
+    val b0: Float
+    val b1: Float
+    val b2: Float
+    val a1: Float
+    val a2: Float
+    if (lowShelf) {
+        b0 = a * ((a + 1f) - (a - 1f) * cosine + beta)
+        b1 = 2f * a * ((a - 1f) - (a + 1f) * cosine)
+        b2 = a * ((a + 1f) - (a - 1f) * cosine - beta)
+        a0 = (a + 1f) + (a - 1f) * cosine + beta
+        a1 = -2f * ((a - 1f) + (a + 1f) * cosine)
+        a2 = (a + 1f) + (a - 1f) * cosine - beta
+    } else {
+        b0 = a * ((a + 1f) + (a - 1f) * cosine + beta)
+        b1 = -2f * a * ((a - 1f) + (a + 1f) * cosine)
+        b2 = a * ((a + 1f) + (a - 1f) * cosine - beta)
+        a0 = (a + 1f) - (a - 1f) * cosine + beta
+        a1 = 2f * ((a - 1f) - (a + 1f) * cosine)
+        a2 = (a + 1f) - (a - 1f) * cosine - beta
+    }
+    val omega = 2f * Math.PI.toFloat() * frequency / rate
+    val c1 = cos(omega)
+    val s1 = sin(omega)
+    val c2 = cos(2f * omega)
+    val s2 = sin(2f * omega)
+    val nr = b0 + b1 * c1 + b2 * c2
+    val ni = -b1 * s1 - b2 * s2
+    val dr = a0 + a1 * c1 + a2 * c2
+    val di = -a1 * s1 - a2 * s2
+    val magnitude = sqrt((nr * nr + ni * ni) / (dr * dr + di * di).coerceAtLeast(1e-12f))
+    return 20f * kotlin.math.log10(magnitude.coerceAtLeast(1e-6f))
+}
