@@ -60,6 +60,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Volatile private var sampleRate = 0
     private var channelCount = 0
     private val frameScratch = FloatArray(2)
+    private val dryFrameScratch = FloatArray(2)
     private var filters = emptyArray<Filter>()
     private var lowShelfFilter: Filter? = null
     private var highShelfFilter: Filter? = null
@@ -297,7 +298,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         if (bytes <= 0) return
         val output = replaceOutputBuffer(bytes).order(ByteOrder.LITTLE_ENDIAN)
         val input = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
-        val targetEqMix = if (enabled) 1f else 0f
+        val targetDspMix = if (enabled) 1f else 0f
         val eqMixStep = if (sampleRate > 0) 1f / (sampleRate * 0.01f) else 1f
         val targetPreampGain = 10.0.pow((preampDb / 20.0).toDouble()).toFloat()
         val protect = peakGuard
@@ -322,7 +323,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             lowShelfFilter?.advance(transitionRemaining)
             for (band in 0 until bandCount) filters[band].advance(transitionRemaining)
             highShelfFilter?.advance(transitionRemaining)
-            enabledMix += (targetEqMix - enabledMix).coerceIn(-eqMixStep, eqMixStep)
+            enabledMix += (targetDspMix - enabledMix).coerceIn(-eqMixStep, eqMixStep)
             currentPreampGain += (targetPreampGain - currentPreampGain) * controlSmoothing
             currentStereoWidth += (targetWidth - currentStereoWidth) * controlSmoothing
             currentStereoBalance += (targetBalance - currentStereoBalance) * controlSmoothing
@@ -330,12 +331,12 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             var framePeak = 0f
             for (channel in 0 until channelCount) {
                 val drySample = input.short.toInt() / 32768f
+                dryFrameScratch[channel] = drySample
                 var wetSample = lowShelfFilter?.process(drySample, channel) ?: drySample
                 for (band in 0 until bandCount) wetSample = filters[band].process(wetSample, channel)
                 wetSample = highShelfFilter?.process(wetSample, channel) ?: wetSample
                 wetSample *= currentPreampGain
-                val sample = drySample + (wetSample - drySample) * enabledMix
-                frame[channel] = sample
+                frame[channel] = wetSample
             }
 
             // Mid/Side stereo width. 100% is transparent, 0% folds to mono,
@@ -371,6 +372,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 if (useCompressor) sample *= compressorGain * makeup
                 if (protect) sample = softLimit(sample)
                 if (useLimiter) sample = sample.coerceIn(-ceiling, ceiling)
+                // The master DSP switch crossfades the complete processed
+                // signal against the original PCM, not just the EQ filters.
+                sample = dryFrameScratch[channel] +
+                    (sample - dryFrameScratch[channel]) * enabledMix
                 frame[channel] = sample
                 val quantized = (sample.coerceIn(-1f, 0.9999695f) * 32768f).toInt()
                 output.putShort(quantized.toShort())
