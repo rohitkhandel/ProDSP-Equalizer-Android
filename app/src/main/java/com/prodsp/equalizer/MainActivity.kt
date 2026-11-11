@@ -184,8 +184,15 @@ private fun ProDspScreen() {
                 val raw = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                     ?: throw IllegalStateException("Could not read preset file")
                 val wrapper = JSONObject(raw)
-                val name = wrapper.optString("name", "Imported preset").trim().take(24).ifBlank { "Imported preset" }
+                val schemaVersion = wrapper.optInt("schemaVersion", 0)
+                require(schemaVersion in 0..1) { "Unsupported preset version" }
                 val settings = wrapper.optJSONObject("settings") ?: wrapper
+                require(settings.has("bandCount") && settings.has("gains") && settings.has("frequencies")) {
+                    "This file is not a ProDSP preset"
+                }
+                val name = wrapper.optString("name", "Imported preset")
+                    .replace(Regex("[\\p{Cntrl}]"), "_")
+                    .trim().take(24).ifBlank { "Imported preset" }
                 preferences.edit()
                     .putString("preset_$name", settings.toString())
                     .putStringSet("names", savedPresets.toSet() + name)
