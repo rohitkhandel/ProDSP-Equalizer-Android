@@ -24,16 +24,16 @@ internal object AutoEqProfileParser {
         val graphicGainsDb: FloatArray
     )
 
-    private const val NUMBER = """[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)"""
+    private const val NUMBER = """[+-]?(?:\d+(?:\.\d*)?|\.\d+)"""
     private val preampRegex = Regex(
-        """^Preamp\\s*:\\s*($NUMBER)\\s*(?:dB)?\\s*$""",
+        """^Preamp\s*:\s*($NUMBER)\s*(?:dB)?\s*$""",
         RegexOption.IGNORE_CASE
     )
     private val filterRegex = Regex(
-        """^Filter\\s+\\d+\\s*:\\s*(ON|OFF)\\s+(PK|LS|HS|LP|HP|BP|NO)\\s+Fc\\s+($NUMBER)\\s*Hz\\s+Gain\\s+($NUMBER)\\s*dB(?:\\s+Q\\s+($NUMBER))?\\s*$""",
+        """^Filter\s+\d+\s*:\s*(ON|OFF)\s+(PK|LS|HS|LP|HP|BP|NO)\s+Fc\s+($NUMBER)\s*Hz\s+Gain\s+($NUMBER)\s*dB(?:\s+Q\s+($NUMBER))?\s*$""",
         RegexOption.IGNORE_CASE
     )
-    private val graphicPointRegex = Regex("""^($NUMBER)\\s+($NUMBER)$""")
+    private val graphicPointRegex = Regex("""^($NUMBER)\s+($NUMBER)$""")
 
     fun parse(source: String): Profile {
         require(source.isNotBlank()) { "Profile is empty" }
