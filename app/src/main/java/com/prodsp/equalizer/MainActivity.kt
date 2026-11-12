@@ -1884,7 +1884,7 @@ private fun detectOutputProfile(manager: AudioManager): OutputProfile {
             OutputProfile("wired", "Wired headphones")
         has(AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_ACCESSORY) ->
             OutputProfile("usb", "USB audio")
-        has(AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC, AudioDeviceInfo.TYPE_DISPLAY_PORT) ->
+        has(AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC) ->
             OutputProfile("hdmi", "HDMI / Display audio")
         has(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) ->
             OutputProfile("speaker", "Phone speaker")
