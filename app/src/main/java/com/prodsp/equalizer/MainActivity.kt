@@ -1049,43 +1049,37 @@ private fun ProDspContent(player: MediaController) {
                                 }
                             }
                             Row(
-                                Modifier.fillMaxWidth(),
+                                Modifier.fillMaxWidth().padding(vertical = 1.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
-                                    Text("A/B EQ COMPARE", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                                    Text("Switch between two saved EQ tunings", color = Muted, fontSize = 7.sp)
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    FilterChip(
-                                        selected = activeAbSlot == 0,
-                                        onClick = { switchEqCompareSlot(0) },
-                                        label = { Text("A", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                                        modifier = Modifier.height(29.dp)
-                                    )
-                                    FilterChip(
-                                        selected = activeAbSlot == 1,
-                                        onClick = { switchEqCompareSlot(1) },
-                                        label = { Text("B", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                                        modifier = Modifier.height(29.dp)
-                                    )
-                                }
-                            }
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("EDITOR", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     FilterChip(
                                         selected = !parametricMode,
                                         onClick = { setParametricMode(false) },
-                                        label = { Text("GRAPHIC", fontSize = 9.sp) },
-                                        modifier = Modifier.height(29.dp),
+                                        label = { Text("GRAPHIC", fontSize = 8.sp, fontWeight = FontWeight.Bold) },
+                                        modifier = Modifier.height(28.dp)
                                     )
                                     FilterChip(
                                         selected = parametricMode,
                                         onClick = { setParametricMode(true) },
-                                        label = { Text("PARAMETRIC", fontSize = 9.sp) },
-                                        modifier = Modifier.height(29.dp),
+                                        label = { Text("PARAMETRIC", fontSize = 8.sp, fontWeight = FontWeight.Bold) },
+                                        modifier = Modifier.height(28.dp)
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text("A/B", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                    FilterChip(
+                                        selected = activeAbSlot == 0,
+                                        onClick = { switchEqCompareSlot(0) },
+                                        label = { Text("A", fontSize = 9.sp, fontWeight = FontWeight.Bold) },
+                                        modifier = Modifier.height(28.dp)
+                                    )
+                                    FilterChip(
+                                        selected = activeAbSlot == 1,
+                                        onClick = { switchEqCompareSlot(1) },
+                                        label = { Text("B", fontSize = 9.sp, fontWeight = FontWeight.Bold) },
+                                        modifier = Modifier.height(28.dp)
                                     )
                                 }
                             }
@@ -1176,6 +1170,42 @@ private fun ProDspContent(player: MediaController) {
                                         }
                                     }
                                 }
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("FREQUENCY RESPONSE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("DRAG NODES TO EDIT", color = SpectrumGreen, fontSize = 8.sp)
+                            }
+                            FrequencyResponseGraph(
+                                frequencies = frequencies,
+                                gains = gains,
+                                qs = bandQs,
+                                types = bandTypes,
+                                bandEnabled = bandEnabled,
+                                bandCount = bandCount,
+                                enabled = dspOn,
+                                lowToneDb = lowTone,
+                                highToneDb = highTone,
+                                lowToneFrequencyHz = lowToneFrequency,
+                                highToneFrequencyHz = highToneFrequency,
+                                sampleRateHz = sampleRateHz,
+                                autoHeadroomDb = if (autoHeadroomOn) autoHeadroomDb else 0f,
+                                selectedBand = selectedBand,
+                                soloBandIndex = soloBandIndex,
+                                editableFrequency = parametricMode,
+                                onBandSelected = { selectedBand = it },
+                                onBandChanged = { index, frequency, gain ->
+                                    if (parametricMode) {
+                                        frequencies[index] = frequency
+                                        dsp.setBandFrequency(index, frequency)
+                                    }
+                                    if (bandTypes[index] in setOf(BiquadFilterType.PEAK, BiquadFilterType.LOW_SHELF, BiquadFilterType.HIGH_SHELF)) {
+                                        gains[index] = gain
+                                        dsp.setBandGain(index, gain)
+                                    }
+                                }
+                            )
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("20 Hz", color = Muted, fontSize = 8.sp); Text("1 kHz", color = Muted, fontSize = 8.sp); Text("20 kHz", color = Muted, fontSize = 8.sp)
                             }
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
@@ -1298,42 +1328,6 @@ private fun ProDspContent(player: MediaController) {
                                         Text("Fixed logarithmic spacing", color = Muted, fontSize = 8.sp)
                                     }
                                 }
-                            }
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("FREQUENCY RESPONSE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Text("DRAG NODES TO EDIT", color = SpectrumGreen, fontSize = 8.sp)
-                            }
-                            FrequencyResponseGraph(
-                                frequencies = frequencies,
-                                gains = gains,
-                                qs = bandQs,
-                                types = bandTypes,
-                                bandEnabled = bandEnabled,
-                                bandCount = bandCount,
-                                enabled = dspOn,
-                                lowToneDb = lowTone,
-                                highToneDb = highTone,
-                                lowToneFrequencyHz = lowToneFrequency,
-                                highToneFrequencyHz = highToneFrequency,
-                                sampleRateHz = sampleRateHz,
-                                autoHeadroomDb = if (autoHeadroomOn) autoHeadroomDb else 0f,
-                                selectedBand = selectedBand,
-                                soloBandIndex = soloBandIndex,
-                                editableFrequency = parametricMode,
-                                onBandSelected = { selectedBand = it },
-                                onBandChanged = { index, frequency, gain ->
-                                    if (parametricMode) {
-                                        frequencies[index] = frequency
-                                        dsp.setBandFrequency(index, frequency)
-                                    }
-                                    if (bandTypes[index] in setOf(BiquadFilterType.PEAK, BiquadFilterType.LOW_SHELF, BiquadFilterType.HIGH_SHELF)) {
-                                        gains[index] = gain
-                                        dsp.setBandGain(index, gain)
-                                    }
-                                }
-                            )
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("20 Hz", color = Muted, fontSize = 8.sp); Text("1 kHz", color = Muted, fontSize = 8.sp); Text("20 kHz", color = Muted, fontSize = 8.sp)
                             }
                             Row(
                                 Modifier.fillMaxWidth()
@@ -1669,7 +1663,7 @@ private fun ProDspContent(player: MediaController) {
                     modifier = Modifier.size(34.dp),
                     contentPadding = PaddingValues(0.dp),
                     shape = CircleShape
-                ) { Text("+", fontSize = 18.sp, color = Color.White) }
+                ) { PlayerControlIcon(4, Color.White) }
                 OutlinedButton(
                     onClick = {
                         if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
@@ -1679,21 +1673,21 @@ private fun ProDspContent(player: MediaController) {
                     modifier = Modifier.size(38.dp),
                     contentPadding = PaddingValues(0.dp),
                     shape = CircleShape
-                ) { Text("‹", fontSize = 20.sp, color = Color.White) }
+                ) { PlayerControlIcon(0, Color.White) }
                 Button(
                     onClick = { if (playing) player.pause() else if (player.mediaItemCount > 0) player.play() },
                     enabled = player.mediaItemCount > 0,
                     modifier = Modifier.size(42.dp),
                     contentPadding = PaddingValues(0.dp),
                     shape = CircleShape
-                ) { Text(if (playing) "Ⅱ" else "▶", fontSize = 14.sp) }
+                ) { PlayerControlIcon(if (playing) 2 else 1, Color.White) }
                 OutlinedButton(
                     onClick = { player.seekToNextMediaItem() },
                     enabled = player.hasNextMediaItem(),
                     modifier = Modifier.size(38.dp),
                     contentPadding = PaddingValues(0.dp),
                     shape = CircleShape
-                ) { Text("›", fontSize = 20.sp, color = Color.White) }
+                ) { PlayerControlIcon(3, Color.White) }
             }
             Row(
                 Modifier.fillMaxWidth()
@@ -1702,7 +1696,7 @@ private fun ProDspContent(player: MediaController) {
                     .padding(horizontal = 6.dp, vertical = 5.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                listOf(0 to "▥", 1 to "◉").forEach { (page, glyph) ->
+                listOf(0, 1).forEach { page ->
                     val active = pagerState.currentPage == page
                     Box(
                         Modifier.weight(1f).height(46.dp)
@@ -1710,7 +1704,7 @@ private fun ProDspContent(player: MediaController) {
                             .clickable { pageScope.launch { pagerState.animateScrollToPage(page) } },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(glyph, color = if (active) Color.White else Color(0xFF929292), fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                        ProDspDockIcon(page, if (active) Color.White else Color(0xFF929292))
                     }
                 }
                 Box(Modifier.weight(1f)) {
@@ -1721,7 +1715,7 @@ private fun ProDspContent(player: MediaController) {
                             .clickable { showMainMenu = !showMainMenu },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("☷", color = if (active) Color.White else Color(0xFF929292), fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                        ProDspDockIcon(2, if (active) Color.White else Color(0xFF929292))
                     }
                     DropdownMenu(expanded = showMainMenu, onDismissRequest = { showMainMenu = false }) {
                         DropdownMenuItem(
@@ -1751,6 +1745,97 @@ private fun ProDspContent(player: MediaController) {
     }
 }
 
+
+@Composable
+private fun ProDspDockIcon(kind: Int, tint: Color) {
+    Canvas(Modifier.size(25.dp)) {
+        val w = size.width
+        val h = size.height
+        when (kind) {
+            0 -> {
+                val barWidth = w * 0.19f
+                val xs = listOf(w * 0.15f, w * 0.42f, w * 0.69f)
+                val heights = listOf(0.42f, 0.82f, 0.62f)
+                xs.forEachIndexed { index, x ->
+                    drawLine(
+                        tint,
+                        Offset(x, h * (1f - heights[index])),
+                        Offset(x, h * 0.92f),
+                        barWidth,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+            1 -> {
+                drawCircle(tint, radius = w * 0.39f, style = Stroke(width = w * 0.16f))
+                drawLine(
+                    tint,
+                    Offset(w * 0.5f, h * 0.49f),
+                    Offset(w * 0.74f, h * 0.23f),
+                    w * 0.14f,
+                    cap = StrokeCap.Round
+                )
+                drawCircle(tint, radius = w * 0.07f, center = Offset(w * 0.5f, h * 0.5f))
+            }
+            else -> {
+                for (index in 0..2) {
+                    val y = h * (0.24f + index * 0.26f)
+                    drawLine(
+                        tint,
+                        Offset(w * 0.16f, y),
+                        Offset(w * 0.84f, y),
+                        w * 0.14f,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerControlIcon(kind: Int, tint: Color) {
+    Canvas(Modifier.size(19.dp)) {
+        val w = size.width
+        val h = size.height
+        when (kind) {
+            0, 3 -> {
+                val path = Path()
+                if (kind == 0) {
+                    drawLine(tint, Offset(w * 0.18f, h * 0.18f), Offset(w * 0.18f, h * 0.82f), w * 0.1f, cap = StrokeCap.Round)
+                    path.moveTo(w * 0.78f, h * 0.16f)
+                    path.lineTo(w * 0.34f, h * 0.5f)
+                    path.lineTo(w * 0.78f, h * 0.84f)
+                } else {
+                    path.moveTo(w * 0.22f, h * 0.16f)
+                    path.lineTo(w * 0.66f, h * 0.5f)
+                    path.lineTo(w * 0.22f, h * 0.84f)
+                    drawLine(tint, Offset(w * 0.82f, h * 0.18f), Offset(w * 0.82f, h * 0.82f), w * 0.1f, cap = StrokeCap.Round)
+                }
+                path.close()
+                drawPath(path, tint)
+            }
+            1 -> {
+                val path = Path().apply {
+                    moveTo(w * 0.28f, h * 0.12f)
+                    lineTo(w * 0.82f, h * 0.5f)
+                    lineTo(w * 0.28f, h * 0.88f)
+                    close()
+                }
+                drawPath(path, tint)
+            }
+            2 -> {
+                drawRoundRect(tint, Offset(w * 0.22f, h * 0.13f), androidx.compose.ui.geometry.Size(w * 0.2f, h * 0.74f), androidx.compose.ui.geometry.CornerRadius(w * 0.06f))
+                drawRoundRect(tint, Offset(w * 0.58f, h * 0.13f), androidx.compose.ui.geometry.Size(w * 0.2f, h * 0.74f), androidx.compose.ui.geometry.CornerRadius(w * 0.06f))
+            }
+            else -> {
+                drawCircle(tint, radius = w * 0.43f)
+                drawCircle(Color(0xFF171717), radius = w * 0.28f)
+                drawLine(Color(0xFF171717), Offset(w * 0.5f, h * 0.5f), Offset(w * 0.76f, h * 0.25f), w * 0.11f, cap = StrokeCap.Round)
+            }
+        }
+    }
+}
 
 @Composable
 private fun ProDspFader(value: Float, min: Float, max: Float, modifier: Modifier = Modifier, accent: Color = Accent, onValue: (Float) -> Unit) {
