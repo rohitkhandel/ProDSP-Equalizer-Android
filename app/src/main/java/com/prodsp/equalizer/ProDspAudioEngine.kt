@@ -8,9 +8,11 @@ package com.prodsp.equalizer
  */
 object ProDspAudioEngine {
     @Volatile var settingsChangedListener: (() -> Unit)? = null
+    @Volatile var externalSessions: ExternalAudioSessionManager? = null
 
     fun notifySettingsChanged() {
         settingsChangedListener?.invoke()
+        externalSessions?.scheduleApply()
     }
 
     val processor: ParametricDspProcessor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {

@@ -288,6 +288,29 @@ object BiquadMath {
     fun magnitudeDb(coefficients: BiquadCoefficients, frequencyHz: Float, sampleRate: Int): Float =
         magnitudeDb(coefficients, frequencyPoint(frequencyHz, sampleRate))
 
+    fun magnitudeDb64(
+        coefficients: BiquadCoefficients64,
+        frequencyHz: Float,
+        sampleRate: Int
+    ): Float {
+        val safeRate = sampleRate.coerceAtLeast(1)
+        val safeFrequency = frequencyHz.coerceIn(0f, safeRate * 0.5f)
+        val omega = 2.0 * PI * safeFrequency / safeRate
+        val cos1 = cos(omega)
+        val sin1 = sin(omega)
+        val cos2 = cos(2.0 * omega)
+        val sin2 = sin(2.0 * omega)
+
+        val numeratorReal = coefficients.b0 + coefficients.b1 * cos1 + coefficients.b2 * cos2
+        val numeratorImag = -coefficients.b1 * sin1 - coefficients.b2 * sin2
+        val denominatorReal = 1.0 + coefficients.a1 * cos1 + coefficients.a2 * cos2
+        val denominatorImag = -coefficients.a1 * sin1 - coefficients.a2 * sin2
+        val numeratorPower = numeratorReal * numeratorReal + numeratorImag * numeratorImag
+        val denominatorPower = denominatorReal * denominatorReal + denominatorImag * denominatorImag
+        val ratio = (numeratorPower / denominatorPower.coerceAtLeast(1e-36)).coerceAtLeast(1e-36)
+        return (10.0 * log10(ratio)).toFloat()
+    }
+
     fun combinedMagnitudeDb(
         filters: List<Pair<BiquadCoefficients, Int>>,
         frequencyHz: Float

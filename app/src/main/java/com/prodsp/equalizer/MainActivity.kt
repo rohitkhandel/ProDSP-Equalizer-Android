@@ -2,7 +2,9 @@ package com.prodsp.equalizer
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.provider.Settings
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -1382,6 +1384,32 @@ private fun ProDspContent(player: MediaController) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text("Peak guard", color = Color.White, fontSize = 12.sp)
                                 Switch(checked = peakGuard, onCheckedChange = { peakGuard = it; dsp.setPeakGuard(it) })
+                            }
+                            Divider(color = Color(0xFF252B30))
+                            Column(
+                                Modifier.fillMaxWidth()
+                                    .background(Panel, RoundedCornerShape(12.dp))
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("EXTERNAL APP AUDIO", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                Text(
+                                    "Apply your EQ to supported music apps through Android audio sessions. This requires notification access. External processing uses the phone's built-in audio effects, so band count and results depend on the device and player.",
+                                    color = Muted,
+                                    fontSize = 9.sp
+                                )
+                                OutlinedButton(
+                                    onClick = {
+                                        runCatching {
+                                            context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                        }.onFailure {
+                                            status = "Could not open notification access settings"
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("OPEN NOTIFICATION ACCESS", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }

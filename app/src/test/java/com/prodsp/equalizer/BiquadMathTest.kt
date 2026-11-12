@@ -8,6 +8,14 @@ class BiquadMathTest {
     private val sampleRate = 48_000
 
     @Test
+    fun doublePrecisionResponseRetainsRequestedCentreGain() {
+        val coefficients = BiquadMath.coefficients64(
+            sampleRate, 1_000f, 1f, 6f, BiquadFilterType.PEAK
+        )
+        assertEquals(6f, BiquadMath.magnitudeDb64(coefficients, 1_000f, sampleRate), 0.02f)
+    }
+
+    @Test
     fun peakingFilterHasRequestedGainAtItsCentreFrequency() {
         val coefficients = BiquadMath.coefficients(
             sampleRate, 1_000f, 1f, 6f, BiquadFilterType.PEAK
