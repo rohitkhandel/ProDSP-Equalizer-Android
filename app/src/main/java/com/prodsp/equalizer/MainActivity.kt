@@ -275,6 +275,13 @@ private fun ProDspContent(player: MediaController) {
     val savedPresets = remember { mutableStateListOf<String>().apply {
         addAll(preferences.getStringSet("names", emptySet())?.sorted() ?: emptyList())
     } }
+    val favoritePresetIds = remember {
+        mutableStateListOf<String>().apply {
+            addAll(preferences.getStringSet("favorite_preset_ids", emptySet()) ?: emptySet())
+        }
+    }
+    var presetSearch by remember { mutableStateOf("") }
+    var selectedPresetCategory by remember { mutableStateOf("All") }
     var showSaveDialog by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
     var pendingExportJson by remember { mutableStateOf<String?>(null) }
@@ -615,11 +622,20 @@ private fun ProDspContent(player: MediaController) {
         preferences.edit().putBoolean("parametric_mode", enabled).apply()
     }
 
+    fun togglePresetFavorite(id: String) {
+        if (id in favoritePresetIds) favoritePresetIds.remove(id) else favoritePresetIds.add(id)
+        preferences.edit()
+            .putStringSet("favorite_preset_ids", favoritePresetIds.toSet())
+            .apply()
+    }
+
     fun deletePreset(name: String) {
         val remaining = savedPresets.filterNot { it == name }.toSet()
+        favoritePresetIds.remove("custom:$name")
         preferences.edit()
             .remove("preset_$name")
             .putStringSet("names", remaining)
+            .putStringSet("favorite_preset_ids", favoritePresetIds.toSet())
             .apply()
         savedPresets.remove(name)
     }
@@ -890,6 +906,26 @@ private fun ProDspContent(player: MediaController) {
         dsp.setSoloBand(-1)
         syncGains()
     }
+
+    val visibleBuiltinPresets = PresetCatalog.filter(
+        query = presetSearch,
+        category = selectedPresetCategory,
+        favorites = favoritePresetIds.toSet()
+    )
+    val visibleCustomPresets = savedPresets.filter { name ->
+        val favorite = "custom:$name" in favoritePresetIds
+        val categoryMatches = when (selectedPresetCategory) {
+            "All", "Custom" -> true
+            "Favorites" -> favorite
+            else -> false
+        }
+        categoryMatches && (presetSearch.isBlank() || name.contains(presetSearch.trim(), ignoreCase = true))
+    }
+    val showBuiltinPresetSection = selectedPresetCategory != "Custom"
+    val showCustomPresetSection = selectedPresetCategory in setOf("All", "Favorites", "Custom")
+    val hasVisiblePresets =
+        (showBuiltinPresetSection && visibleBuiltinPresets.isNotEmpty()) ||
+        (showCustomPresetSection && visibleCustomPresets.isNotEmpty())
 
     fun resetEqualizer() {
         val defaultFrequencies = EqBandLayout.frequencies(bandCount, maxHz = maxBandFrequencyHz)
@@ -1273,35 +1309,125 @@ private fun ProDspContent(player: MediaController) {
                         }
                     }
                     else -> {
-                        Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("PRESETS & PLAYER", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
-                            Text("QUICK PRESETS", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
-                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf("Flat", "Bass", "Vocal", "Treble", "Rock", "Classical", "Dance", "Jazz", "Acoustic", "Podcast", "Electronic", "Pop").forEach { name ->
-                                    OutlinedButton(onClick = { applyPreset(name) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                                        Text(name, fontSize = 10.sp, maxLines = 1)
+                        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text("PRESET LIBRARY", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black, letterSpacing = 1.4.sp)
+                                Text("Find a sound. Save your favourites. Tune it your way.", color = Muted, fontSize = 10.sp)
+                            }
+                            OutlinedTextField(
+                                value = presetSearch,
+                                onValueChange = { presetSearch = it.take(48) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                placeholder = { Text("Search presets, styles or saved sounds", fontSize = 11.sp) },
+                                leadingIcon = { Text("⌕", color = Muted, fontSize = 22.sp) },
+                                trailingIcon = {
+                                    if (presetSearch.isNotEmpty()) {
+                                        TextButton(onClick = { presetSearch = "" }) {
+                                            Text("CLEAR", color = Accent, fontSize = 8.sp)
+                                        }
+                                    }
+                                },
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                PresetCatalog.categories.forEach { category ->
+                                    FilterChip(
+                                        selected = selectedPresetCategory == category,
+                                        onClick = { selectedPresetCategory = category },
+                                        label = { Text(category.uppercase(Locale.US), fontSize = 8.sp, fontWeight = FontWeight.Bold) },
+                                        modifier = Modifier.height(31.dp)
+                                    )
+                                }
+                            }
+                            if (showBuiltinPresetSection) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text("BUILT-IN PROFILES", color = Muted, fontSize = 9.sp, letterSpacing = 1.35.sp, fontWeight = FontWeight.Bold)
+                                    Text("${visibleBuiltinPresets.size} profiles", color = Muted, fontSize = 8.sp)
+                                }
+                                visibleBuiltinPresets.forEach { preset ->
+                                    val favoriteId = "builtin:${preset.name}"
+                                    val isFavorite = favoriteId in favoritePresetIds
+                                    Row(
+                                        Modifier.fillMaxWidth()
+                                            .background(Panel, RoundedCornerShape(14.dp))
+                                            .clickable { applyPreset(preset.name); status = "Applied ${preset.name} preset" }
+                                            .padding(start = 13.dp, end = 7.dp, top = 10.dp, bottom = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                                Text(preset.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    preset.category.uppercase(Locale.US),
+                                                    color = Color(0xFF73D6C2),
+                                                    fontSize = 7.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    letterSpacing = 0.6.sp
+                                                )
+                                            }
+                                            Text(preset.description, color = Muted, fontSize = 9.sp, maxLines = 2)
+                                        }
+                                        TextButton(onClick = { togglePresetFavorite(favoriteId) }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 3.dp)) {
+                                            Text(if (isFavorite) "★" else "☆", color = if (isFavorite) Color(0xFFFFC857) else Muted, fontSize = 20.sp)
+                                        }
+                                        TextButton(onClick = { applyPreset(preset.name); status = "Applied ${preset.name} preset" }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                                            Text("APPLY", color = Accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 }
                             }
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("CUSTOM PRESETS", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
-                                Row {
-                                    TextButton(onClick = { importPresetLauncher.launch(arrayOf("application/json", "text/json", "*/*")) }) { Text("JSON", color = Muted, fontSize = 10.sp) }
-                                    TextButton(onClick = { autoEqProfileLauncher.launch(arrayOf("text/plain", "application/octet-stream", "*/*")) }) { Text("AUTOEQ", color = Color(0xFF73D6C2), fontSize = 10.sp) }
-                                    TextButton(onClick = { showSaveDialog = true }) { Text("+ SAVE", color = Accent, fontSize = 10.sp) }
-                                }
-                            }
-                            if (savedPresets.isEmpty()) {
-                                Text("No custom presets saved yet.", color = Muted, fontSize = 11.sp)
-                            }
-                            savedPresets.forEach { name ->
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    TextButton(onClick = { loadPreset(name) }, modifier = Modifier.weight(1f)) {
-                                        Text(name, color = Color.White, maxLines = 1)
+                            if (showCustomPresetSection) {
+                                Divider(color = Color(0xFF252B30))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text("MY PRESETS", color = Muted, fontSize = 9.sp, letterSpacing = 1.35.sp, fontWeight = FontWeight.Bold)
+                                        Text("${visibleCustomPresets.size} saved profiles", color = Muted, fontSize = 8.sp)
                                     }
-                                    TextButton(onClick = { exportPreset(name) }) { Text("EXPORT", color = Muted, fontSize = 9.sp) }
-                                    TextButton(onClick = { deletePreset(name) }) { Text("DELETE", color = Accent, fontSize = 9.sp) }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        TextButton(onClick = { importPresetLauncher.launch(arrayOf("application/json", "text/json", "*/*")) }, contentPadding = PaddingValues(horizontal = 4.dp)) { Text("JSON", color = Muted, fontSize = 9.sp) }
+                                        TextButton(onClick = { autoEqProfileLauncher.launch(arrayOf("text/plain", "application/octet-stream", "*/*")) }, contentPadding = PaddingValues(horizontal = 4.dp)) { Text("AUTOEQ", color = Color(0xFF73D6C2), fontSize = 9.sp) }
+                                        TextButton(onClick = { showSaveDialog = true }, contentPadding = PaddingValues(horizontal = 4.dp)) { Text("+ SAVE", color = Accent, fontSize = 9.sp) }
+                                    }
                                 }
+                                if (visibleCustomPresets.isEmpty()) {
+                                    Text(
+                                        if (presetSearch.isNotBlank()) "No saved preset matches your search." else if (selectedPresetCategory == "Favorites") "No custom favourites saved yet." else "No custom presets saved yet.",
+                                        color = Muted,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                                visibleCustomPresets.forEach { name ->
+                                    val favoriteId = "custom:$name"
+                                    val isFavorite = favoriteId in favoritePresetIds
+                                    Row(
+                                        Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(start = 10.dp, end = 4.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Column(Modifier.weight(1f).clickable { loadPreset(name); status = "Loaded preset: $name" }.padding(vertical = 5.dp)) {
+                                            Text(name, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                            Text("CUSTOM PROFILE", color = Muted, fontSize = 7.sp, letterSpacing = 0.7.sp)
+                                        }
+                                        TextButton(onClick = { togglePresetFavorite(favoriteId) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                                            Text(if (isFavorite) "★" else "☆", color = if (isFavorite) Color(0xFFFFC857) else Muted, fontSize = 18.sp)
+                                        }
+                                        TextButton(onClick = { exportPreset(name) }, contentPadding = PaddingValues(horizontal = 4.dp)) { Text("EXPORT", color = Muted, fontSize = 8.sp) }
+                                        TextButton(onClick = { deletePreset(name) }, contentPadding = PaddingValues(horizontal = 4.dp)) { Text("DELETE", color = Accent, fontSize = 8.sp) }
+                                    }
+                                }
+                            }
+                            if (!hasVisiblePresets) {
+                                Text(
+                                    "No presets found. Try another search or choose All.",
+                                    color = Muted,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                )
                             }
                             Divider(color = Color(0xFF252B30))
                             Text("LOCAL MUSIC PLAYER", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
