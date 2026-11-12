@@ -468,9 +468,10 @@ private fun ProDspContent(player: MediaController) {
         }
     }
 
-    LaunchedEffect(dsp) {
+    LaunchedEffect(dsp, showSpectrum) {
+        dsp.setSpectrumEnabled(showSpectrum)
         while (true) {
-            spectrum = dsp.spectrumSnapshot()
+            if (showSpectrum) spectrum = dsp.spectrumSnapshot()
             val activeRate = dsp.currentSampleRate()
             if (sampleRateHz != activeRate) sampleRateHz = activeRate
             val headroom = dsp.currentAutoHeadroomDb()

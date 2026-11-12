@@ -203,6 +203,50 @@ class ParametricDspProcessorTest {
     }
 
     @Test
+    fun hiddenSpectrumSkipsCaptureAndReenabledAnalyzerStartsWithAFreshWindow() {
+        val processor = createFloatProcessor()
+        try {
+            val firstHalf = stereoTone(frames = 1_024, startFrame = 0, amplitude = 0.25)
+            processFloat(processor, firstHalf)
+            assertTrue(
+                "A partial FFT window must not publish a spectrum frame",
+                processor.spectrumSnapshot().all { it == 0f }
+            )
+
+            processor.setSpectrumEnabled(false)
+            processFloat(
+                processor,
+                stereoTone(frames = 1_024, startFrame = 1_024, amplitude = 0.25)
+            )
+            assertTrue(
+                "The hidden analyzer must clear its published spectrum",
+                processor.spectrumSnapshot().all { it == 0f }
+            )
+
+            processor.setSpectrumEnabled(true)
+            processFloat(
+                processor,
+                stereoTone(frames = 1_024, startFrame = 2_048, amplitude = 0.25)
+            )
+            assertTrue(
+                "Re-enabling must not combine pre-hide samples with a new FFT window",
+                processor.spectrumSnapshot().all { it == 0f }
+            )
+
+            processFloat(
+                processor,
+                stereoTone(frames = 1_024, startFrame = 3_072, amplitude = 0.25)
+            )
+            assertTrue(
+                "A complete fresh FFT window should publish a visible spectrum",
+                (processor.spectrumSnapshot().maxOrNull() ?: 0f) > 0.2f
+            )
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
     fun inactiveBandsFadeToIdentityAndReturnWithoutAStaleStateJump() {
         val processor = createFloatProcessor()
         try {

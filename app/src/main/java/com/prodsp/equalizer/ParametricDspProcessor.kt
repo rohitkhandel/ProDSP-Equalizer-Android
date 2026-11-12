@@ -66,6 +66,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         (0.5 - 0.5 * kotlin.math.cos(2.0 * PI * i / (fftSize - 1))).toFloat()
     }
     private var fftWriteIndex = 0
+    // One atomic state word carries both visibility and a reset generation.
+    // The audio thread reads it once per input buffer and owns FFT write indices.
+    @Volatile private var spectrumCaptureState = 1
+    private var appliedSpectrumGeneration = 0
     @Volatile private var spectrumBands = FloatArray(48)
     // The audio thread fills the work buffer and swaps it with the published
     // snapshot. Readers copy under a short lock, so the callback never allocates.
@@ -278,14 +282,23 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     }
 
     private fun clearSpectrum() = synchronized(spectrumLock) {
+        // The published array is shared with readers. The work array is owned
+        // by the audio thread and is fully overwritten before its next publish.
         spectrumBands.fill(0f)
-        spectrumWork.fill(0f)
+    }
+
+    fun setSpectrumEnabled(value: Boolean) {
+        val current = spectrumCaptureState
+        if ((current and 1) == if (value) 1 else 0) return
+        val nextGeneration = (current ushr 1) + 1
+        spectrumCaptureState = (nextGeneration shl 1) or if (value) 1 else 0
+        clearSpectrum()
     }
 
     fun currentSampleRate(): Int = sampleRate.takeIf { it > 0 } ?: 48_000
     fun maximumFrequencyHz(): Float = minOf(20_000f, currentSampleRate() * 0.475f).coerceAtLeast(20f)
 
-    private fun pushSpectrumSample(leftSample: Float, rightSample: Float) {
+    private fun pushSpectrumSample(leftSample: Float, rightSample: Float, captureState: Int) {
         val window = fftWindow[fftWriteIndex]
         fftReal[fftWriteIndex] = leftSample * window
         fftImag[fftWriteIndex] = 0f
@@ -383,6 +396,11 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             next[band] = maxOf(normalized, previous[band] * 0.72f)
         }
         synchronized(spectrumLock) {
+            // A visibility change invalidates a partially captured FFT window.
+            // Do not publish a frame computed for an older UI capture state.
+            if (spectrumCaptureState != captureState || (spectrumCaptureState and 1) == 0) {
+                return
+            }
             spectrumBands = next
             spectrumWork = previous
         }
@@ -452,6 +470,17 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     override fun queueInput(inputBuffer: ByteBuffer) {
         val bytes = inputBuffer.remaining()
         if (bytes <= 0) return
+
+        // FFT analysis is optional work. When the visualizer is hidden, skip
+        // both sample capture and the radix-2 transform entirely.
+        val spectrumState = spectrumCaptureState
+        val captureSpectrum = (spectrumState and 1) != 0
+        val spectrumGeneration = spectrumState ushr 1
+        if (spectrumGeneration != appliedSpectrumGeneration) {
+            fftWriteIndex = 0
+            appliedSpectrumGeneration = spectrumGeneration
+        }
+
         val output = replaceOutputBuffer(bytes).order(ByteOrder.LITTLE_ENDIAN)
         val input = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
         val targetDspMix = if (enabled) 1f else 0f
@@ -609,9 +638,11 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                     output.putShort(quantized.toShort())
                 }
             }
-            val spectrumLeft = frame[0]
-            val spectrumRight = if (channelCount == 2) frame[1] else frame[0]
-            pushSpectrumSample(spectrumLeft, spectrumRight)
+            if (captureSpectrum) {
+                val spectrumLeft = frame[0]
+                val spectrumRight = if (channelCount == 2) frame[1] else frame[0]
+                pushSpectrumSample(spectrumLeft, spectrumRight, spectrumState)
+            }
             if (transitionRemaining > 0) transitionRemaining--
         }
         inputBuffer.position(input.position())
@@ -666,6 +697,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         currentReverbDamping = reverbDampingPercent
         reverbProcessor?.clear()
         fftWriteIndex = 0
+        appliedSpectrumGeneration = spectrumCaptureState ushr 1
         clearSpectrum()
         filters.forEach { it.clearState() }
         lowShelfFilter?.clearState()
@@ -680,6 +712,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         compressorGain = 1f
         limiterGain = 1f
         fftWriteIndex = 0
+        appliedSpectrumGeneration = spectrumCaptureState ushr 1
         clearSpectrum()
         filters = emptyArray()
         lowShelfFilter = null
