@@ -4,6 +4,11 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.net.Uri
 import android.os.Build
@@ -288,6 +293,7 @@ private fun ProDspContent(player: MediaController) {
     var showSaveDialog by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
     var pendingExportJson by remember { mutableStateOf<String?>(null) }
+    var activeOutputProfile by remember { mutableStateOf(readActiveOutputProfile(context)) }
     val pageTitles = listOf("EQUALIZER", "TONE", "DYNAMICS", "PRESETS")
     val pagerState = rememberPagerState(pageCount = { pageTitles.size })
     val pageScope = rememberCoroutineScope()
@@ -740,7 +746,7 @@ private fun ProDspContent(player: MediaController) {
         activeAbSlot = target
     }
 
-    fun savePreset(nameInput: String) {
+    fun savePreset(nameInput: String, addToPresetList: Boolean = true) {
         val name = nameInput.trim().take(24)
         if (name.isBlank()) return
         val data = JSONObject()
@@ -776,9 +782,10 @@ private fun ProDspContent(player: MediaController) {
             .put("limiterCeiling", limiterCeiling)
             .put("limiterRelease", limiterRelease)
             .put("dspOn", dspOn)
-        preferences.edit().putString("preset_$name", data.toString())
-            .putStringSet("names", (savedPresets.toSet() + name)).apply()
-        if (name !in savedPresets) savedPresets.add(name)
+        val editor = preferences.edit().putString("preset_$name", data.toString())
+        if (addToPresetList) editor.putStringSet("names", savedPresets.toSet() + name)
+        editor.apply()
+        if (addToPresetList && name !in savedPresets) savedPresets.add(name)
         showSaveDialog = false
         presetName = ""
     }
@@ -908,6 +915,33 @@ private fun ProDspContent(player: MediaController) {
         soloBandIndex = -1
         dsp.setSoloBand(-1)
         syncGains()
+    }
+
+    val audioManager = remember(context) {
+        context.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
+    }
+    val loadDevicePreset by rememberUpdatedState<(String) -> Unit> { key ->
+        val internalName = "__device_${key}"
+        if (preferences.contains("preset_${internalName}")) {
+            loadPreset(internalName)
+            status = "Loaded ${key.uppercase(Locale.US)} audio profile"
+        }
+    }
+    DisposableEffect(audioManager) {
+        fun refreshOutputProfile() {
+            val next = detectOutputProfile(audioManager)
+            if (next.id != activeOutputProfile.id) {
+                activeOutputProfile = next
+                loadDevicePreset(next.id)
+            }
+        }
+        val callback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = refreshOutputProfile()
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) = refreshOutputProfile()
+        }
+        audioManager.registerAudioDeviceCallback(callback, Handler(Looper.getMainLooper()))
+        refreshOutputProfile()
+        onDispose { audioManager.unregisterAudioDeviceCallback(callback) }
     }
 
     val visibleBuiltinPresets = PresetCatalog.filter(
@@ -1436,6 +1470,32 @@ private fun ProDspContent(player: MediaController) {
                                 shape = RoundedCornerShape(14.dp)
                             )
                             Row(
+                                Modifier.fillMaxWidth()
+                                    .background(Panel, RoundedCornerShape(13.dp))
+                                    .padding(horizontal = 11.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("OUTPUT PROFILE", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    Text(activeOutputProfile.label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        if (preferences.contains("preset___device_${activeOutputProfile.id}")) "Automatic profile switching enabled" else "No saved profile for this output",
+                                        color = Muted,
+                                        fontSize = 8.sp
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        savePreset("__device_${activeOutputProfile.id}", addToPresetList = false)
+                                        status = "Saved ${activeOutputProfile.label} profile"
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 5.dp)
+                                ) {
+                                    Text("SAVE", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Row(
                                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
@@ -1803,6 +1863,33 @@ private fun ValueSlider(label: String, value: Float, onValue: (Float) -> Unit, r
     }
 }
 
+
+private data class OutputProfile(val id: String, val label: String)
+
+private fun readActiveOutputProfile(context: android.content.Context): OutputProfile {
+    val manager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
+    return detectOutputProfile(manager)
+}
+
+private fun detectOutputProfile(manager: AudioManager): OutputProfile {
+    val outputs = runCatching { manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList() }
+        .getOrDefault(emptyList())
+    fun has(vararg types: Int): Boolean = outputs.any { it.type in types }
+
+    return when {
+        has(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER) ->
+            OutputProfile("bluetooth", "Bluetooth")
+        has(AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET) ->
+            OutputProfile("wired", "Wired headphones")
+        has(AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_ACCESSORY) ->
+            OutputProfile("usb", "USB audio")
+        has(AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC, AudioDeviceInfo.TYPE_DISPLAY_PORT) ->
+            OutputProfile("hdmi", "HDMI / Display audio")
+        has(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) ->
+            OutputProfile("speaker", "Phone speaker")
+        else -> OutputProfile("default", "Default output")
+    }
+}
 
 private fun queryDisplayName(context: android.content.Context, uri: Uri): String {
     val projection = arrayOf(android.provider.OpenableColumns.DISPLAY_NAME)
