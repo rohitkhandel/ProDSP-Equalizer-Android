@@ -941,6 +941,7 @@ private fun ProDspContent(player: MediaController) {
         }
         audioManager.registerAudioDeviceCallback(callback, Handler(Looper.getMainLooper()))
         refreshOutputProfile()
+        loadDevicePreset(activeOutputProfile.id)
         onDispose { audioManager.unregisterAudioDeviceCallback(callback) }
     }
 
