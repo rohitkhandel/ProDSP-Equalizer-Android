@@ -486,7 +486,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             // Keep filter state warm even while bypassed, then blend the
             // processed and dry signals over 10 ms to avoid abrupt switching.
             lowShelfFilter?.advance(transitionRemaining)
-            for (band in 0 until bandCount) filters[band].advance(transitionRemaining)
+            // Every section stays in the signal path. Sections outside the selected
+            // layout have an identity target, so they can finish their fade and
+            // keep delay state warm instead of resuming with stale history.
+            for (band in filters.indices) filters[band].advance(transitionRemaining)
             highShelfFilter?.advance(transitionRemaining)
             enabledMix += (targetDspMix - enabledMix).coerceIn(-eqMixStep, eqMixStep)
             currentPreampGain += (targetPreampGain - currentPreampGain) * controlSmoothing
@@ -512,7 +515,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 // EQ filter coefficients and delay states stay Double precision,
                 // even when the surrounding player pipeline uses Float PCM.
                 var wetSample = lowShelfFilter?.process(drySample.toDouble(), channel) ?: drySample.toDouble()
-                for (band in 0 until bandCount) wetSample = filters[band].process(wetSample, channel)
+                for (band in filters.indices) wetSample = filters[band].process(wetSample, channel)
                 wetSample = highShelfFilter?.process(wetSample, channel) ?: wetSample
                 wetSample *= currentPreampGain.toDouble()
                 frame[channel] = wetSample.toFloat()

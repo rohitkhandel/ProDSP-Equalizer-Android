@@ -175,6 +175,79 @@ class ParametricDspProcessorTest {
         }
     }
 
+    private fun stereoTone(
+        frames: Int,
+        startFrame: Int,
+        frequencyHz: Double = 1_000.0,
+        amplitude: Double = 0.08
+    ): FloatArray = FloatArray(frames * 2) { index ->
+        val frame = startFrame + index / 2
+        (amplitude * sin(2.0 * PI * frequencyHz * frame / 48_000.0)).toFloat()
+    }
+
+    private fun rmsGain(
+        output: FloatArray,
+        input: FloatArray,
+        firstFrame: Int,
+        lastFrame: Int
+    ): Double {
+        var inputPower = 0.0
+        var outputPower = 0.0
+        for (frame in firstFrame until lastFrame) {
+            val source = input[frame * 2].toDouble()
+            val rendered = output[frame * 2].toDouble()
+            inputPower += source * source
+            outputPower += rendered * rendered
+        }
+        return sqrt(outputPower / inputPower)
+    }
+
+    @Test
+    fun inactiveBandsFadeToIdentityAndReturnWithoutAStaleStateJump() {
+        val processor = createFloatProcessor()
+        try {
+            processor.configureBands(15)
+            processor.setBandFrequency(14, 1_000f)
+            processor.setBandQ(14, 1f)
+            processor.setBandGain(14, 9f)
+            processor.flush()
+
+            val warmInput = stereoTone(frames = 6_000, startFrame = 0)
+            val warmOutput = processFloat(processor, warmInput)
+            assertTrue("The 15th band did not boost the test tone",
+                rmsGain(warmOutput, warmInput, 3_000, 6_000) > 2.2)
+
+            processor.configureBands(10)
+            val inactiveInput = stereoTone(frames = 16_000, startFrame = 6_000)
+            val inactiveOutput = processFloat(processor, inactiveInput)
+            assertEquals(
+                "A band outside the selected layout must become transparent",
+                1.0,
+                rmsGain(inactiveOutput, inactiveInput, 8_000, 16_000),
+                0.02
+            )
+
+            processor.configureBands(15)
+            val reenabledInput = stereoTone(frames = 2_048, startFrame = 22_000)
+            val reenabledOutput = processFloat(processor, reenabledInput)
+            val earlyGain = rmsGain(reenabledOutput, reenabledInput, 0, 128)
+            val settledGain = rmsGain(reenabledOutput, reenabledInput, 1_400, 2_048)
+
+            assertTrue(
+                "Re-enabled band jumped straight to full gain instead of transitioning smoothly: $earlyGain",
+                earlyGain < 1.7
+            )
+            assertEquals(
+                "The saved band curve should return after its transition",
+                10.0.pow(9.0 / 20.0),
+                settledGain,
+                0.18
+            )
+        } finally {
+            processor.reset()
+        }
+    }
+
     @Test
     fun peakGuardSoftLimitsFloatPcmWithSymmetricCurve() {
         val processor = createFloatProcessor()
