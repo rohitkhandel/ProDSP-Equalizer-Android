@@ -828,18 +828,6 @@ private fun ProDspContent(player: MediaController) {
                     })
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                pageTitles.forEachIndexed { index, title ->
-                    val active = pagerState.currentPage == index
-                    TextButton(onClick = { pageScope.launch { pagerState.animateScrollToPage(index) } }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp)) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(title, color = if (active) Color.White else Color(0xFF68727B), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.7.sp)
-                            Spacer(Modifier.height(5.dp))
-                            Canvas(Modifier.fillMaxWidth().height(2.dp)) { if (active) drawLine(Accent, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 2.dp.toPx()) }
-                        }
-                    }
-                }
-            }
             HorizontalPager(state = pagerState, modifier = Modifier.weight(1f).fillMaxWidth()) { page ->
                 when (page) {
                     0 -> {
@@ -1076,6 +1064,28 @@ private fun ProDspContent(player: MediaController) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("20 Hz", color = Muted, fontSize = 8.sp); Text("1 kHz", color = Muted, fontSize = 8.sp); Text("20 kHz", color = Muted, fontSize = 8.sp)
                             }
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .background(Color(0xFF101418), RoundedCornerShape(18.dp))
+                                    .padding(vertical = 10.dp, horizontal = 14.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("BASS", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    ProDspKnob("BASS", lowTone, -12f, 12f, "%+.1f dB") {
+                                        lowTone = it
+                                        dsp.setLowToneGain(it)
+                                    }
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("TREBLE", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    ProDspKnob("TREBLE", highTone, -12f, 12f, "%+.1f dB") {
+                                        highTone = it
+                                        dsp.setHighToneGain(it)
+                                    }
+                                }
+                            }
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("LIVE SPECTRUM", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -1228,6 +1238,43 @@ private fun ProDspContent(player: MediaController) {
                     }
                 }
             }
+            Row(
+                Modifier.fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
+                    .background(Color(0xFF15191D), RoundedCornerShape(22.dp))
+                    .padding(5.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf("EQUALIZER" to "▥", "TONE" to "◉", "DYNAMICS" to "≈", "PRESETS" to "☷")
+                    .forEachIndexed { index, item ->
+                        val active = pagerState.currentPage == index
+                        Column(
+                            Modifier.weight(1f)
+                                .background(
+                                    if (active) Color(0xFF30363C) else Color.Transparent,
+                                    RoundedCornerShape(17.dp)
+                                )
+                                .clickable { pageScope.launch { pagerState.animateScrollToPage(index) } }
+                                .padding(vertical = 5.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(1.dp)
+                        ) {
+                            Text(
+                                item.second,
+                                color = if (active) Accent else Color(0xFF9099A2),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                item.first,
+                                color = if (active) Color.White else Color(0xFF8B949D),
+                                fontSize = 7.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.45.sp
+                            )
+                        }
+                    }
+            }
             Divider(color = Color(0xFF252B30), thickness = 1.dp)
             Row(
                 Modifier.fillMaxWidth()
@@ -1326,10 +1373,45 @@ private fun ProDspFader(value: Float, min: Float, max: Float, modifier: Modifier
             drawLine(tickColor, Offset(centerX + 3.dp.toPx(), tickY), Offset(centerX + tickHalfWidth + 3.dp.toPx(), tickY), 1.dp.toPx())
         }
         drawLine(Color(0xFF343A40), Offset(centerX, top), Offset(centerX, bottom), 3.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(accent.copy(alpha = 0.22f), Offset(centerX, zeroY), Offset(centerX, y), 10.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(accent, Offset(centerX, zeroY), Offset(centerX, y), 3.dp.toPx(), cap = StrokeCap.Round)
-        drawCircle(Color.White, 7.dp.toPx(), Offset(centerX, y))
-        drawCircle(accent, 3.dp.toPx(), Offset(centerX, y))
+        val activeTop = minOf(zeroY, y)
+        val activeBottom = maxOf(zeroY, y)
+        drawLine(
+            accent.copy(alpha = 0.16f),
+            Offset(centerX, activeTop),
+            Offset(centerX, activeBottom),
+            7.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            accent,
+            Offset(centerX, activeTop),
+            Offset(centerX, activeBottom),
+            2.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        val capWidth = 24.dp.toPx()
+        val capHeight = 38.dp.toPx()
+        val capTopLeft = Offset(centerX - capWidth / 2f, y - capHeight / 2f)
+        drawRoundRect(
+            color = Color(0xFF282D32),
+            topLeft = capTopLeft,
+            size = androidx.compose.ui.geometry.Size(capWidth, capHeight),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(capWidth / 2f)
+        )
+        drawRoundRect(
+            color = Color(0xFF68727C),
+            topLeft = capTopLeft,
+            size = androidx.compose.ui.geometry.Size(capWidth, capHeight),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(capWidth / 2f),
+            style = Stroke(1.dp.toPx())
+        )
+        drawLine(
+            Color(0xFFF2F4F6),
+            Offset(centerX - 6.dp.toPx(), y),
+            Offset(centerX + 6.dp.toPx(), y),
+            2.dp.toPx(),
+            cap = StrokeCap.Round
+        )
         drawLine(Color(0xFF69737C), Offset(centerX - 8.dp.toPx(), zeroY), Offset(centerX + 8.dp.toPx(), zeroY), 1.dp.toPx())
     }
 }
