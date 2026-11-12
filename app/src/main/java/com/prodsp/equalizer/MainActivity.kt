@@ -361,6 +361,97 @@ private fun ProDspContent(player: MediaController) {
         }
     }
 
+    val autoEqProfileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val raw = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: throw IllegalStateException("Could not read AutoEQ profile")
+                require(raw.length <= 256 * 1024) { "AutoEQ profile is too large" }
+                val profile = AutoEqProfileParser.parse(raw)
+                val sourceName = queryDisplayName(context, uri)
+                    .substringBeforeLast('.', queryDisplayName(context, uri))
+                    .take(48)
+
+                parametricBackup = null
+                preferences.edit().remove("parametric_backup").apply()
+                soloBandIndex = -1
+                dsp.setSoloBand(-1)
+
+                if (profile.filters.isNotEmpty()) {
+                    val count = profile.filters.size.coerceIn(1, EqBandLayout.MAX_BANDS)
+                    bandCount = count
+                    parametricMode = true
+                    preferences.edit().putBoolean("parametric_mode", true).apply()
+                    dsp.configureBands(count)
+                    for (index in 0 until EqBandLayout.MAX_BANDS) {
+                        if (index < count) {
+                            val filter = profile.filters[index]
+                            gains[index] = filter.gainDb.coerceIn(-15f, 15f)
+                            frequencies[index] = filter.frequencyHz.coerceIn(20f, maxBandFrequencyHz)
+                            bandQs[index] = filter.q.coerceIn(0.3f, 8f)
+                            bandTypes[index] = filter.type
+                            bandEnabled[index] = filter.enabled
+                            dsp.setBandGain(index, gains[index])
+                            dsp.setBandFrequency(index, frequencies[index])
+                            dsp.setBandQ(index, bandQs[index])
+                            dsp.setBandType(index, bandTypes[index])
+                            dsp.setBandEnabled(index, bandEnabled[index])
+                        } else {
+                            gains[index] = 0f
+                            bandEnabled[index] = true
+                        }
+                    }
+                } else {
+                    val count = bandCount.coerceIn(1, EqBandLayout.MAX_BANDS)
+                    val targetFrequencies = EqBandLayout.frequencies(count, maxHz = maxBandFrequencyHz)
+                    val targetGains = EqBandLayout.resampleGains(
+                        profile.graphicFrequenciesHz,
+                        profile.graphicGainsDb,
+                        targetFrequencies
+                    )
+                    parametricMode = false
+                    preferences.edit().putBoolean("parametric_mode", false).apply()
+                    dsp.configureBands(count)
+                    for (index in 0 until EqBandLayout.MAX_BANDS) {
+                        if (index < count) {
+                            frequencies[index] = targetFrequencies[index]
+                            gains[index] = targetGains[index].coerceIn(-15f, 15f)
+                            bandQs[index] = 1f
+                            bandTypes[index] = BiquadFilterType.PEAK
+                            bandEnabled[index] = true
+                            dsp.setBandGain(index, gains[index])
+                            dsp.setBandFrequency(index, frequencies[index])
+                            dsp.setBandQ(index, 1f)
+                            dsp.setBandType(index, BiquadFilterType.PEAK)
+                            dsp.setBandEnabled(index, true)
+                        } else {
+                            gains[index] = 0f
+                            bandEnabled[index] = true
+                        }
+                    }
+                }
+
+                preamp = profile.preampDb.coerceIn(-12f, 6f)
+                dsp.setPreamp(preamp)
+                lowTone = 0f
+                highTone = 0f
+                dsp.setLowToneGain(0f)
+                dsp.setHighToneGain(0f)
+                selectedBand = 0
+                dsp.setAllGains(FloatArray(EqBandLayout.MAX_BANDS) { gains[it] })
+                status = if (profile.filters.isNotEmpty()) {
+                    "AutoEQ loaded: $sourceName · ${profile.filters.size} filters"
+                } else {
+                    "AutoEQ GraphicEQ loaded: $sourceName"
+                }
+            } catch (error: Exception) {
+                status = "AutoEQ import failed: ${error.message ?: "invalid profile"}"
+            }
+        }
+    }
+
     LaunchedEffect(dsp) {
         while (true) {
             spectrum = dsp.spectrumSnapshot()
@@ -1195,7 +1286,8 @@ private fun ProDspContent(player: MediaController) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text("CUSTOM PRESETS", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
                                 Row {
-                                    TextButton(onClick = { importPresetLauncher.launch(arrayOf("application/json", "text/json", "*/*")) }) { Text("IMPORT", color = Muted, fontSize = 10.sp) }
+                                    TextButton(onClick = { importPresetLauncher.launch(arrayOf("application/json", "text/json", "*/*")) }) { Text("JSON", color = Muted, fontSize = 10.sp) }
+                                    TextButton(onClick = { autoEqProfileLauncher.launch(arrayOf("text/plain", "application/octet-stream", "*/*")) }) { Text("AUTOEQ", color = Color(0xFF73D6C2), fontSize = 10.sp) }
                                     TextButton(onClick = { showSaveDialog = true }) { Text("+ SAVE", color = Accent, fontSize = 10.sp) }
                                 }
                             }
