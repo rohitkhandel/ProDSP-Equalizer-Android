@@ -293,7 +293,7 @@ private fun ProDspContent(player: MediaController) {
     var showSaveDialog by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
     var pendingExportJson by remember { mutableStateOf<String?>(null) }
-    var activeOutputProfile by remember { mutableStateOf(readActiveOutputProfile(context)) }
+    var activeOutputProfile by remember { mutableStateOf(readConnectedOutputProfile(context)) }
     val pageTitles = listOf("EQUALIZER", "TONE", "DYNAMICS", "PRESETS")
     val pagerState = rememberPagerState(pageCount = { pageTitles.size })
     val pageScope = rememberCoroutineScope()
@@ -931,7 +931,7 @@ private fun ProDspContent(player: MediaController) {
     }
     DisposableEffect(audioManager) {
         fun refreshOutputProfile() {
-            val next = detectOutputProfile(audioManager)
+            val next = detectConnectedOutputProfile(audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { it.type })
             if (next.id != activeOutputProfileId) {
                 activeOutputProfile = next
                 loadDevicePreset(next.id)
@@ -1487,6 +1487,7 @@ private fun ProDspContent(player: MediaController) {
                                         color = Muted,
                                         fontSize = 8.sp
                                     )
+                                    Text("Based on connected-device detection", color = Muted, fontSize = 7.sp)
                                 }
                                 TextButton(
                                     onClick = {
@@ -1867,31 +1868,12 @@ private fun ValueSlider(label: String, value: Float, onValue: (Float) -> Unit, r
 }
 
 
-private data class OutputProfile(val id: String, val label: String)
-
-private fun readActiveOutputProfile(context: android.content.Context): OutputProfile {
+private fun readConnectedOutputProfile(context: android.content.Context): OutputProfile {
     val manager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
-    return detectOutputProfile(manager)
-}
-
-private fun detectOutputProfile(manager: AudioManager): OutputProfile {
-    val outputs = runCatching { manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList() }
-        .getOrDefault(emptyList())
-    fun has(vararg types: Int): Boolean = outputs.any { it.type in types }
-
-    return when {
-        has(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER) ->
-            OutputProfile("bluetooth", "Bluetooth")
-        has(AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET) ->
-            OutputProfile("wired", "Wired headphones")
-        has(AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_ACCESSORY) ->
-            OutputProfile("usb", "USB audio")
-        has(AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC) ->
-            OutputProfile("hdmi", "HDMI / Display audio")
-        has(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) ->
-            OutputProfile("speaker", "Phone speaker")
-        else -> OutputProfile("default", "Default output")
-    }
+    return detectConnectedOutputProfile(
+        runCatching { manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { it.type } }
+            .getOrDefault(emptyList())
+    )
 }
 
 private fun queryDisplayName(context: android.content.Context, uri: Uri): String {
