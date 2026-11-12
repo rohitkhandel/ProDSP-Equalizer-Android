@@ -1405,7 +1405,7 @@ private fun ProDspContent(player: MediaController) {
                                     val favoriteId = "custom:$name"
                                     val isFavorite = favoriteId in favoritePresetIds
                                     Row(
-                                        Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(start = 10.dp, end = 4.dp, vertical = 5.dp),
+                                        Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(13.dp)).padding(start = 10.dp, end = 4.dp).padding(vertical = 5.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                                     ) {
