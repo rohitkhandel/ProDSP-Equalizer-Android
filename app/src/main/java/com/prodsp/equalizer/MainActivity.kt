@@ -262,6 +262,7 @@ private fun ProDspContent(player: MediaController) {
         mutableStateListOf<Boolean>().apply { initialDsp.bandEnabled.forEach { add(it) } }
     }
     var showFilterMenu by remember { mutableStateOf(false) }
+    var showMainMenu by remember { mutableStateOf(false) }
     var showSpectrum by remember { mutableStateOf(true) }
     var preamp by remember(dsp) { mutableFloatStateOf(initialDsp.preampDb) }
     var autoHeadroomOn by remember(dsp) { mutableStateOf(initialDsp.autoHeadroomEnabled) }
@@ -997,19 +998,34 @@ private fun ProDspContent(player: MediaController) {
 
     Surface(Modifier.fillMaxSize(), color = Color(0xFF050607)) {
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 14.dp, top = 12.dp, bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column {
-                    Text("PRODSP", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 3.sp)
-                    Text("EQUALIZER", color = Color(0xFFB7BEC5), fontSize = 10.sp, letterSpacing = 2.sp)
+            Row(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text("PRODSP  /  EQUALIZER", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 1.45.sp)
+                    Text(
+                        "${sampleRateHz / 1000} kHz  ·  ${activeOutputProfile.label.uppercase(Locale.US)}",
+                        color = Muted,
+                        fontSize = 8.sp,
+                        letterSpacing = 0.65.sp,
+                        maxLines = 1
+                    )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (dspOn) "DSP ACTIVE" else "DSP BYPASS", color = if (dspOn) Accent else Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(8.dp))
-                    Switch(checked = dspOn, onCheckedChange = {
-                        dspOn = it
-                        dsp.setEnabled(it)
-                        deviceEffects.setEnabled(it)
-                    })
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text(if (dspOn) "ON" else "BYPASS", color = if (dspOn) Accent else Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    Switch(
+                        checked = dspOn,
+                        onCheckedChange = {
+                            dspOn = it
+                            dsp.setEnabled(it)
+                            deviceEffects.setEnabled(it)
+                        }
+                    )
                 }
             }
             HorizontalPager(state = pagerState, modifier = Modifier.weight(1f).fillMaxWidth()) { page ->
@@ -1074,7 +1090,7 @@ private fun ProDspContent(player: MediaController) {
                                 }
                             }
                             Row(
-                                Modifier.fillMaxWidth().height(226.dp),
+                                Modifier.fillMaxWidth().height(284.dp),
                                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -1132,17 +1148,17 @@ private fun ProDspContent(player: MediaController) {
                                     for (i in 0 until bandCount) {
                                         val bandColor = bandAccent(i, bandCount)
                                         Column(
-                                            Modifier.width(48.dp).fillMaxHeight()
+                                            Modifier.width(96.dp).fillMaxHeight()
                                                 .background(
-                                                    bandColor.copy(alpha = if (selectedBand == i) 0.22f else 0.055f),
-                                                    RoundedCornerShape(10.dp)
+                                                    bandColor.copy(alpha = if (selectedBand == i) 0.23f else 0.095f),
+                                                    RoundedCornerShape(15.dp)
                                                 )
                                                 .clickable { selectedBand = i }
-                                                .padding(vertical = 4.dp),
+                                                .padding(vertical = 8.dp, horizontal = 5.dp),
                                             horizontalAlignment = Alignment.CenterHorizontally
                                         ) {
                                             Text("${i + 1}", color = if (selectedBand == i) Color.White else Muted, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                                            Text(formatFrequency(frequencies[i]), color = if (selectedBand == i) bandColor else Muted, fontSize = 8.sp)
+                                            Text(formatFrequency(frequencies[i]), color = if (selectedBand == i) bandColor else Muted, fontSize = 9.sp, fontWeight = FontWeight.Medium)
                                             ProDspFader(gains[i], -15f, 15f, Modifier.weight(1f).fillMaxWidth(), accent = bandColor) {
                                                 gains[i] = it
                                                 dsp.setBandGain(i, it)
@@ -1151,7 +1167,7 @@ private fun ProDspContent(player: MediaController) {
                                             Text(
                                                 String.format(Locale.US, "%+.1f", gains[i]),
                                                 color = if (bandEnabled[i]) bandColor else Muted,
-                                                fontSize = 9.sp,
+                                                fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Canvas(Modifier.fillMaxWidth().height(3.dp)) {
@@ -1343,7 +1359,7 @@ private fun ProDspContent(player: MediaController) {
                             }
                             if (showSpectrum) {
                                 Column(
-                                    Modifier.fillMaxWidth().background(Color(0xFF101418), RoundedCornerShape(12.dp)).padding(8.dp),
+                                    Modifier.fillMaxWidth().background(Color(0xFF101418), RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 5.dp),
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -1610,34 +1626,6 @@ private fun ProDspContent(player: MediaController) {
             }
             Row(
                 Modifier.fillMaxWidth()
-                    .padding(horizontal = 34.dp, vertical = 6.dp)
-                    .background(Color(0xFF15191D), RoundedCornerShape(24.dp))
-                    .padding(horizontal = 7.dp, vertical = 5.dp),
-                horizontalArrangement = Arrangement.spacedBy(9.dp)
-            ) {
-                listOf("▥", "◉", "≈", "☷").forEachIndexed { index, glyph ->
-                    val active = pagerState.currentPage == index
-                    Box(
-                        Modifier.weight(1f).height(38.dp)
-                            .background(
-                                if (active) Color(0xFF30363C) else Color.Transparent,
-                                CircleShape
-                            )
-                            .clickable { pageScope.launch { pagerState.animateScrollToPage(index) } },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            glyph,
-                            color = if (active) Accent else Color(0xFF9099A2),
-                            fontSize = 21.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-            Divider(color = Color(0xFF252B30), thickness = 1.dp)
-            Row(
-                Modifier.fillMaxWidth()
                     .background(Color(0xFF10151A))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1706,6 +1694,52 @@ private fun ProDspContent(player: MediaController) {
                     contentPadding = PaddingValues(0.dp),
                     shape = CircleShape
                 ) { Text("›", fontSize = 20.sp, color = Color.White) }
+            }
+            Row(
+                Modifier.fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 5.dp)
+                    .background(Color(0xFF171717), RoundedCornerShape(28.dp))
+                    .padding(horizontal = 6.dp, vertical = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(0 to "▥", 1 to "◉").forEach { (page, glyph) ->
+                    val active = pagerState.currentPage == page
+                    Box(
+                        Modifier.weight(1f).height(46.dp)
+                            .background(if (active) Color(0xFF303030) else Color.Transparent, CircleShape)
+                            .clickable { pageScope.launch { pagerState.animateScrollToPage(page) } },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(glyph, color = if (active) Color.White else Color(0xFF929292), fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Box(Modifier.weight(1f)) {
+                    val active = pagerState.currentPage >= 2
+                    Box(
+                        Modifier.fillMaxWidth().height(46.dp)
+                            .background(if (active) Color(0xFF303030) else Color.Transparent, CircleShape)
+                            .clickable { showMainMenu = !showMainMenu },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("☷", color = if (active) Color.White else Color(0xFF929292), fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    }
+                    DropdownMenu(expanded = showMainMenu, onDismissRequest = { showMainMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Dynamics processor") },
+                            onClick = {
+                                showMainMenu = false
+                                pageScope.launch { pagerState.animateScrollToPage(2) }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Preset library") },
+                            onClick = {
+                                showMainMenu = false
+                                pageScope.launch { pagerState.animateScrollToPage(3) }
+                            }
+                        )
+                    }
+                }
             }
         }
         if (showSaveDialog) {
@@ -1837,7 +1871,7 @@ private fun ProDspKnob(label: String, value: Float, min: Float, max: Float, form
 
 @Composable
 private fun SpectrumAnalyzer(levels: FloatArray, active: Boolean) {
-    Canvas(Modifier.fillMaxWidth().height(112.dp)) {
+    Canvas(Modifier.fillMaxWidth().height(48.dp)) {
         val count = levels.size.coerceAtLeast(1)
         val gap = 2.dp.toPx()
         val barWidth = ((size.width - gap * (count - 1)) / count).coerceAtLeast(1f)
@@ -1993,7 +2027,7 @@ private fun FrequencyResponseGraph(
     Canvas(
         Modifier
             .fillMaxWidth()
-            .height(154.dp)
+            .height(126.dp)
             .pointerInput(sampleRateHz, editableFrequency, activeCount) {
                 var dragIndex = -1
                 val left = 8.dp.toPx()
