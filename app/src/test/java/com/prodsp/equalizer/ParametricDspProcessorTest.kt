@@ -139,6 +139,43 @@ class ParametricDspProcessorTest {
     }
 
     @Test
+    fun nonFiniteFloatPcmSamplesDoNotPoisonTheRecursiveEqState() {
+        val processor = createFloatProcessor()
+        try {
+            processor.setBandFrequency(0, 1_000f)
+            processor.setBandQ(0, 1.2f)
+            processor.setBandGain(0, 6f)
+            processor.flush()
+
+            val frames = 4_096
+            val input = FloatArray(frames * 2) { index ->
+                val frame = index / 2
+                val channel = index % 2
+                when {
+                    frame == 512 && channel == 0 -> Float.NaN
+                    frame == 1_024 && channel == 1 -> Float.POSITIVE_INFINITY
+                    frame == 1_536 && channel == 0 -> Float.NEGATIVE_INFINITY
+                    else -> (0.12 * sin(2.0 * PI * 1_000.0 * frame / 48_000.0)).toFloat()
+                }
+            }
+
+            val output = processFloat(processor, input)
+
+            assertEquals(input.size, output.size)
+            assertTrue(
+                "Invalid float PCM values escaped into the output",
+                output.all { it.isFinite() }
+            )
+            assertTrue(
+                "The valid signal was lost after sanitizing invalid samples",
+                output.any { kotlin.math.abs(it) > 0.01f }
+            )
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
     fun peakGuardSoftLimitsFloatPcmWithSymmetricCurve() {
         val processor = createFloatProcessor()
         try {

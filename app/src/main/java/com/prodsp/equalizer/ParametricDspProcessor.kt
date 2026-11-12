@@ -499,7 +499,11 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             var framePeak = 0f
             for (channel in 0 until channelCount) {
                 val drySample = if (pcmEncoding == C.ENCODING_PCM_FLOAT) {
-                    input.float
+                    // Float PCM should be finite. A single NaN/Infinity can poison
+                    // a recursive biquad's delay state, so replace invalid samples
+                    // before they enter any filter while preserving valid headroom.
+                    val decoded = input.float
+                    if (decoded.isFinite()) decoded else 0f
                 } else {
                     input.short.toInt() / 32768f
                 }
