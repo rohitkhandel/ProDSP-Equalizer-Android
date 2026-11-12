@@ -49,6 +49,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     @Volatile private var limiterReleaseMs = 80f
     @Volatile private var stereoWidth = 1f
     @Volatile private var stereoBalance = 0f
+    @Volatile private var reverbEnabled = false
+    @Volatile private var reverbWetPercent = 25f
+    @Volatile private var reverbRoomSizePercent = 55f
+    @Volatile private var reverbDampingPercent = 35f
 
     private var compressorEnvelope = 0f
     private var compressorGain = 1f
@@ -75,6 +79,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     private var currentPreampGain = 1f
     private var currentStereoWidth = 1f
     private var currentStereoBalance = 0f
+    private var reverbProcessor: SchroederReverb? = null
+    private var currentReverbWet = 0f
+    private var currentReverbRoomSize = 55f
+    private var currentReverbDamping = 35f
 
     data class Snapshot(
         val bandCount: Int,
@@ -102,7 +110,11 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val limiterCeilingDb: Float,
         val limiterReleaseMs: Float,
         val stereoWidthPercent: Float,
-        val stereoBalancePercent: Float
+        val stereoBalancePercent: Float,
+        val reverbEnabled: Boolean,
+        val reverbWetPercent: Float,
+        val reverbRoomSizePercent: Float,
+        val reverbDampingPercent: Float
     )
 
     @Synchronized fun bandFrequency(index: Int): Float = centerFrequencies.getOrElse(index) { 1000f }
@@ -219,6 +231,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     fun setLimiterRelease(valueMs: Float) { limiterReleaseMs = valueMs.coerceIn(10f, 500f); ProDspAudioEngine.notifySettingsChanged() }
     fun setStereoWidth(percent: Float) { stereoWidth = percent.coerceIn(0f, 200f) / 100f; ProDspAudioEngine.notifySettingsChanged() }
     fun setStereoBalance(percent: Float) { stereoBalance = percent.coerceIn(-100f, 100f); ProDspAudioEngine.notifySettingsChanged() }
+    fun setReverbEnabled(value: Boolean) { reverbEnabled = value; ProDspAudioEngine.notifySettingsChanged() }
+    fun setReverbWetPercent(value: Float) { reverbWetPercent = value.coerceIn(0f, 100f); ProDspAudioEngine.notifySettingsChanged() }
+    fun setReverbRoomSizePercent(value: Float) { reverbRoomSizePercent = value.coerceIn(0f, 100f); ProDspAudioEngine.notifySettingsChanged() }
+    fun setReverbDampingPercent(value: Float) { reverbDampingPercent = value.coerceIn(0f, 100f); ProDspAudioEngine.notifySettingsChanged() }
     @Synchronized fun snapshot() = Snapshot(
         bandCount = bandCount,
         gainsDb = gainsDb.copyOf(),
@@ -245,7 +261,11 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         limiterCeilingDb = limiterCeilingDb,
         limiterReleaseMs = limiterReleaseMs,
         stereoWidthPercent = stereoWidth * 100f,
-        stereoBalancePercent = stereoBalance
+        stereoBalancePercent = stereoBalance,
+        reverbEnabled = reverbEnabled,
+        reverbWetPercent = reverbWetPercent,
+        reverbRoomSizePercent = reverbRoomSizePercent,
+        reverbDampingPercent = reverbDampingPercent
     )
 
     fun spectrumSnapshot(): FloatArray = spectrumBands.copyOf()
@@ -364,6 +384,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         filters = Array(31) { Filter(channelCount) }
         lowShelfFilter = Filter(channelCount)
         highShelfFilter = Filter(channelCount)
+        reverbProcessor = SchroederReverb(sampleRate, channelCount)
         updateTargets()
         return inputAudioFormat
     }
@@ -435,6 +456,9 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         } else 0f
         val targetWidth = stereoWidth
         val targetBalance = stereoBalance
+        val targetReverbWet = if (reverbEnabled) reverbWetPercent / 100f else 0f
+        val targetReverbRoomSize = reverbRoomSizePercent
+        val targetReverbDamping = reverbDampingPercent
         val controlSmoothing = if (sampleRate > 0) {
             (1f - exp(-1f / (0.01f * sampleRate))).coerceIn(0f, 1f)
         } else 1f
@@ -450,6 +474,9 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             currentPreampGain += (targetPreampGain - currentPreampGain) * controlSmoothing
             currentStereoWidth += (targetWidth - currentStereoWidth) * controlSmoothing
             currentStereoBalance += (targetBalance - currentStereoBalance) * controlSmoothing
+            currentReverbWet += (targetReverbWet - currentReverbWet) * controlSmoothing
+            currentReverbRoomSize += (targetReverbRoomSize - currentReverbRoomSize) * controlSmoothing
+            currentReverbDamping += (targetReverbDamping - currentReverbDamping) * controlSmoothing
 
             var framePeak = 0f
             for (channel in 0 until channelCount) {
@@ -473,6 +500,23 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             if (channelCount == 2 && kotlin.math.abs(currentStereoBalance) > 0.0001f) {
                 frame[0] *= StereoWidthMath.leftBalanceGain(currentStereoBalance)
                 frame[1] *= StereoWidthMath.rightBalanceGain(currentStereoBalance)
+            }
+
+            // Add a smoothly blended stereo room tail before dynamics/limiting.
+            // Once bypassed, feed silence into the delay network so old tails decay.
+            val reverb = reverbProcessor
+            if (reverb != null) {
+                for (channel in 0 until channelCount) {
+                    val reverbInput = if (currentReverbWet > 0.0001f) frame[channel] else 0f
+                    val reverberated = reverb.process(
+                        reverbInput,
+                        channel,
+                        currentReverbRoomSize,
+                        currentReverbDamping
+                    )
+                    frame[channel] = frame[channel] * (1f - currentReverbWet * 0.25f) +
+                        reverberated * currentReverbWet
+                }
             }
             for (channel in 0 until channelCount) framePeak = maxOf(framePeak, abs(frame[channel]))
 
@@ -556,6 +600,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         currentPreampGain = 10.0.pow(((preampDb - automaticHeadroomDb) / 20.0).toDouble()).toFloat()
         currentStereoWidth = stereoWidth
         currentStereoBalance = stereoBalance
+        currentReverbWet = if (reverbEnabled) reverbWetPercent / 100f else 0f
+        currentReverbRoomSize = reverbRoomSizePercent
+        currentReverbDamping = reverbDampingPercent
+        reverbProcessor?.clear()
         fftWriteIndex = 0
         spectrumBands = FloatArray(48)
         filters.forEach { it.clearState() }
@@ -575,6 +623,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         filters = emptyArray()
         lowShelfFilter = null
         highShelfFilter = null
+        reverbProcessor = null
     }
 
     private class Filter(channels: Int) {

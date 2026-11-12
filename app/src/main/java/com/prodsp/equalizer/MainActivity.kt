@@ -260,6 +260,10 @@ private fun ProDspContent(player: MediaController) {
     var autoHeadroomDb by remember(dsp) { mutableFloatStateOf(dsp.currentAutoHeadroomDb()) }
     var lowTone by remember(dsp) { mutableFloatStateOf(initialDsp.lowToneDb) }
     var highTone by remember(dsp) { mutableFloatStateOf(initialDsp.highToneDb) }
+    var reverbOn by remember(dsp) { mutableStateOf(initialDsp.reverbEnabled) }
+    var reverbWet by remember(dsp) { mutableFloatStateOf(initialDsp.reverbWetPercent) }
+    var reverbRoomSize by remember(dsp) { mutableFloatStateOf(initialDsp.reverbRoomSizePercent) }
+    var reverbDamping by remember(dsp) { mutableFloatStateOf(initialDsp.reverbDampingPercent) }
     var lowToneFrequency by remember(dsp) { mutableFloatStateOf(initialDsp.lowToneFrequencyHz) }
     var highToneFrequency by remember(dsp) { mutableFloatStateOf(initialDsp.highToneFrequencyHz) }
     var balance by remember(dsp) { mutableFloatStateOf(initialDsp.stereoBalancePercent) }
@@ -647,6 +651,10 @@ private fun ProDspContent(player: MediaController) {
             .put("bass", bass)
             .put("stereoWidth", width)
             .put("virtualizerStrength", virtualizerStrength)
+            .put("reverbEnabled", reverbOn)
+            .put("reverbWet", reverbWet)
+            .put("reverbRoomSize", reverbRoomSize)
+            .put("reverbDamping", reverbDamping)
             .put("peakGuard", peakGuard)
             .put("compressorOn", compressorOn)
             .put("compressorThreshold", compressorThreshold)
@@ -704,6 +712,10 @@ private fun ProDspContent(player: MediaController) {
             bass = data.optDouble("bass", 0.0).toFloat()
             width = data.optDouble("stereoWidth", 100.0).toFloat().coerceIn(0f, 200f)
             virtualizerStrength = data.optDouble("virtualizerStrength", 0.0).toFloat().coerceIn(0f, 100f)
+            reverbOn = data.optBoolean("reverbEnabled", false)
+            reverbWet = data.optDouble("reverbWet", 25.0).toFloat().coerceIn(0f, 100f)
+            reverbRoomSize = data.optDouble("reverbRoomSize", 55.0).toFloat().coerceIn(0f, 100f)
+            reverbDamping = data.optDouble("reverbDamping", 35.0).toFloat().coerceIn(0f, 100f)
             dsp.setLowToneGain(lowTone)
             dsp.setHighToneGain(highTone)
             dsp.setLowToneFrequency(lowToneFrequency)
@@ -711,6 +723,10 @@ private fun ProDspContent(player: MediaController) {
             dsp.setAutoHeadroom(autoHeadroomOn)
             dsp.setStereoBalance(balance)
             dsp.setStereoWidth(width)
+            dsp.setReverbWetPercent(reverbWet)
+            dsp.setReverbRoomSizePercent(reverbRoomSize)
+            dsp.setReverbDampingPercent(reverbDamping)
+            dsp.setReverbEnabled(reverbOn)
             deviceEffects.setBassStrength((bass * 10).toInt())
             deviceEffects.setVirtualizerStrength((virtualizerStrength * 10).toInt())
             peakGuard = data.optBoolean("peakGuard", true)
@@ -1109,6 +1125,28 @@ private fun ProDspContent(player: MediaController) {
                             Text("DEVICE EFFECTS", color = Muted, fontSize = 9.sp, letterSpacing = 1.5.sp)
                             ValueSlider("Bass enhancement", bass, { bass = it; deviceEffects.setBassStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
                             ValueSlider("Device virtualizer", virtualizerStrength, { virtualizerStrength = it; deviceEffects.setVirtualizerStrength((it * 10).toInt()) }, 0f..100f, "%.0f%%")
+                            Divider(color = Color(0xFF252B30))
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("ALGORITHMIC REVERB", color = Muted, fontSize = 9.sp, letterSpacing = 1.5.sp)
+                                    Text("Stereo room ambience · PCM DSP", color = Color.White, fontSize = 11.sp)
+                                }
+                                Switch(
+                                    checked = reverbOn,
+                                    onCheckedChange = {
+                                        reverbOn = it
+                                        dsp.setReverbEnabled(it)
+                                    }
+                                )
+                            }
+                            ValueSlider("Wet level", reverbWet, { reverbWet = it; dsp.setReverbWetPercent(it) }, 0f..100f, "%.0f%%")
+                            ValueSlider("Room size", reverbRoomSize, { reverbRoomSize = it; dsp.setReverbRoomSizePercent(it) }, 0f..100f, "%.0f%%")
+                            ValueSlider("Damping", reverbDamping, { reverbDamping = it; dsp.setReverbDampingPercent(it) }, 0f..100f, "%.0f%%")
+                            Text("Wet level controls the reverb tail. Larger rooms create longer reflections; damping softens the high frequencies.", color = Muted, fontSize = 9.sp)
                             Divider(color = Color(0xFF252B30))
                             Text("STEREO IMAGE · PCM DSP", color = Muted, fontSize = 9.sp, letterSpacing = 1.5.sp)
                             ValueSlider("Stereo width", width, { width = it; dsp.setStereoWidth(it) }, 0f..200f, "%.0f%%")

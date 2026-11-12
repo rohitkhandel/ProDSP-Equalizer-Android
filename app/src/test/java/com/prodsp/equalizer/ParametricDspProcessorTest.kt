@@ -270,6 +270,10 @@ class ParametricDspProcessorTest {
             processor.setLimiterRelease(125f)
             processor.setStereoWidth(145f)
             processor.setStereoBalance(-25f)
+            processor.setReverbEnabled(true)
+            processor.setReverbWetPercent(62f)
+            processor.setReverbRoomSizePercent(78f)
+            processor.setReverbDampingPercent(41f)
 
             val snapshot = processor.snapshot()
 
@@ -299,6 +303,10 @@ class ParametricDspProcessorTest {
             assertEquals(125f, snapshot.limiterReleaseMs, 0.001f)
             assertEquals(145f, snapshot.stereoWidthPercent, 0.001f)
             assertEquals(-25f, snapshot.stereoBalancePercent, 0.001f)
+            assertEquals(true, snapshot.reverbEnabled)
+            assertEquals(62f, snapshot.reverbWetPercent, 0.001f)
+            assertEquals(78f, snapshot.reverbRoomSizePercent, 0.001f)
+            assertEquals(41f, snapshot.reverbDampingPercent, 0.001f)
         } finally {
             processor.reset()
         }
@@ -379,7 +387,11 @@ class ParametricDspProcessorTest {
             processor.setLimiterRelease(100f)
             processor.setStereoWidth(120f)
             processor.setStereoBalance(-10f)
-            assertTrue("DSP mutations did not notify persistence", notifications >= 25)
+            processor.setReverbEnabled(true)
+            processor.setReverbWetPercent(35f)
+            processor.setReverbRoomSizePercent(65f)
+            processor.setReverbDampingPercent(45f)
+            assertTrue("DSP mutations did not notify persistence", notifications >= 29)
         } finally {
             ProDspAudioEngine.settingsChangedListener = null
             processor.reset()
