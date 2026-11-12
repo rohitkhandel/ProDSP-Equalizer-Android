@@ -255,6 +255,7 @@ private fun ProDspContent(player: MediaController) {
         mutableStateListOf<Boolean>().apply { initialDsp.bandEnabled.forEach { add(it) } }
     }
     var showFilterMenu by remember { mutableStateOf(false) }
+    var showSpectrum by remember { mutableStateOf(true) }
     var preamp by remember(dsp) { mutableFloatStateOf(initialDsp.preampDb) }
     var autoHeadroomOn by remember(dsp) { mutableStateOf(initialDsp.autoHeadroomEnabled) }
     var autoHeadroomDb by remember(dsp) { mutableFloatStateOf(dsp.currentAutoHeadroomDb()) }
@@ -1032,22 +1033,93 @@ private fun ProDspContent(player: MediaController) {
                                     )
                                 }
                             }
-                            Row(Modifier.fillMaxWidth().height(226.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Column(Modifier.width(42.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("PRE", color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                    ProDspFader(preamp, -12f, 6f, Modifier.weight(1f).width(42.dp)) { preamp = it; dsp.setPreamp(it) }
-                                    Text(String.format(Locale.US, "%+.1f", preamp), color = Color.White, fontSize = 9.sp)
-                                }
-                                for (i in 0 until bandCount) {
-                                    Column(Modifier.width(46.dp).fillMaxHeight().clickable { selectedBand = i }, horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text("${i + 1}", color = if (selectedBand == i) Color.White else Muted, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                                        Text(formatFrequency(frequencies[i]), color = if (selectedBand == i) Accent else Muted, fontSize = 8.sp)
-                                        ProDspFader(gains[i], -15f, 15f, Modifier.weight(1f).fillMaxWidth(), accent = bandAccent(i, bandCount)) { gains[i] = it; dsp.setBandGain(i, it); selectedBand = i }
-                                        Text(String.format(Locale.US, "%+.1f", gains[i]), color = if (bandEnabled[i]) bandAccent(i, bandCount) else Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                        Canvas(Modifier.fillMaxWidth().height(3.dp)) { if (selectedBand == i) drawLine(Accent, Offset(0f, size.height/2), Offset(size.width, size.height/2), 2.dp.toPx()) }
+                            Row(
+                                Modifier.fillMaxWidth().height(226.dp),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    Modifier.width(48.dp).fillMaxHeight(),
+                                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            dspOn = !dspOn
+                                            dsp.setEnabled(dspOn)
+                                            deviceEffects.setEnabled(dspOn)
+                                        },
+                                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                                        contentPadding = PaddingValues(0.dp),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text(if (dspOn) "EQ" else "OFF", fontSize = 8.sp, fontWeight = FontWeight.Black,
+                                            color = if (dspOn) Accent else Muted)
+                                    }
+                                    OutlinedButton(
+                                        onClick = { limiterOn = !limiterOn; dsp.setLimiterEnabled(limiterOn) },
+                                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                                        contentPadding = PaddingValues(0.dp),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("LIMIT", fontSize = 7.sp, fontWeight = FontWeight.Bold,
+                                            color = if (limiterOn) SpectrumGreen else Muted)
+                                    }
+                                    OutlinedButton(
+                                        onClick = { showSpectrum = !showSpectrum },
+                                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                                        contentPadding = PaddingValues(0.dp),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("SPEC", fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                                            color = if (showSpectrum) SpectrumGreen else Muted)
                                     }
                                 }
-
+                                Row(
+                                    Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Column(
+                                        Modifier.width(42.dp).fillMaxHeight()
+                                            .background(Color(0xFF13181D), RoundedCornerShape(10.dp))
+                                            .padding(vertical = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text("PRE", color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        ProDspFader(preamp, -12f, 6f, Modifier.weight(1f).width(42.dp)) { preamp = it; dsp.setPreamp(it) }
+                                        Text(String.format(Locale.US, "%+.1f", preamp), color = Color.White, fontSize = 9.sp)
+                                    }
+                                    for (i in 0 until bandCount) {
+                                        val bandColor = bandAccent(i, bandCount)
+                                        Column(
+                                            Modifier.width(48.dp).fillMaxHeight()
+                                                .background(
+                                                    bandColor.copy(alpha = if (selectedBand == i) 0.22f else 0.055f),
+                                                    RoundedCornerShape(10.dp)
+                                                )
+                                                .clickable { selectedBand = i }
+                                                .padding(vertical = 4.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text("${i + 1}", color = if (selectedBand == i) Color.White else Muted, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                                            Text(formatFrequency(frequencies[i]), color = if (selectedBand == i) bandColor else Muted, fontSize = 8.sp)
+                                            ProDspFader(gains[i], -15f, 15f, Modifier.weight(1f).fillMaxWidth(), accent = bandColor) {
+                                                gains[i] = it
+                                                dsp.setBandGain(i, it)
+                                                selectedBand = i
+                                            }
+                                            Text(
+                                                String.format(Locale.US, "%+.1f", gains[i]),
+                                                color = if (bandEnabled[i]) bandColor else Muted,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Canvas(Modifier.fillMaxWidth().height(3.dp)) {
+                                                if (selectedBand == i) drawLine(bandColor, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 2.dp.toPx())
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
@@ -1229,12 +1301,17 @@ private fun ProDspContent(player: MediaController) {
                                     }
                                 }
                             }
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("LIVE SPECTRUM", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    Text(if (playing) "● LIVE" else "STANDBY", color = if (playing) Accent else Muted, fontSize = 8.sp)
+                            if (showSpectrum) {
+                                Column(
+                                    Modifier.fillMaxWidth().background(Color(0xFF101418), RoundedCornerShape(12.dp)).padding(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("LIVE SPECTRUM", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text(if (playing) "● LIVE" else "STANDBY", color = if (playing) Accent else Muted, fontSize = 8.sp)
+                                    }
+                                    SpectrumAnalyzer(spectrum, playing)
                                 }
-                                SpectrumAnalyzer(spectrum, playing)
                             }
                         }
                     }
@@ -1429,107 +1506,41 @@ private fun ProDspContent(player: MediaController) {
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                                 )
                             }
-                            Divider(color = Color(0xFF252B30))
-                            Text("LOCAL MUSIC PLAYER", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
-                            Text(trackName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                            Text("$queueCount tracks in queue · $status", color = Muted, fontSize = 10.sp, maxLines = 2)
-                            Slider(
-                                value = if (durationMs > 0L) currentPositionMs.coerceIn(0L, durationMs).toFloat() else 0f,
-                                onValueChange = { currentPositionMs = it.toLong(); seeking = true },
-                                onValueChangeFinished = { player.seekTo(currentPositionMs); seeking = false },
-                                enabled = durationMs > 0L,
-                                valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f)
+                            Text(
+                                "Playback controls stay in the compact player bar below.",
+                                color = Muted,
+                                fontSize = 9.sp
                             )
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(formatDuration(currentPositionMs), color = Muted, fontSize = 9.sp)
-                                Text(formatDuration(durationMs), color = Muted, fontSize = 9.sp)
-                            }
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                                OutlinedButton(
-                                    onClick = { if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0L) },
-                                    enabled = player.mediaItemCount > 0
-                                ) { Text("PREV", fontSize = 9.sp) }
-                                Spacer(Modifier.width(8.dp))
-                                Button(
-                                    onClick = { if (playing) player.pause() else if (player.mediaItemCount > 0) player.play() },
-                                    enabled = player.mediaItemCount > 0
-                                ) { Text(if (playing) "PAUSE" else "PLAY") }
-                                Spacer(Modifier.width(8.dp))
-                                OutlinedButton(
-                                    onClick = { player.seekToNextMediaItem() },
-                                    enabled = player.hasNextMediaItem()
-                                ) { Text("NEXT", fontSize = 9.sp) }
-                            }
-                            Row(
-                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                TextButton(onClick = { player.shuffleModeEnabled = !shuffleEnabled }) {
-                                    Text(if (shuffleEnabled) "SHUFFLE ON" else "SHUFFLE", color = if (shuffleEnabled) Accent else Muted, fontSize = 8.sp)
-                                }
-                                TextButton(onClick = {
-                                    player.repeatMode = when (repeatMode) {
-                                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                                        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                                        else -> Player.REPEAT_MODE_OFF
-                                    }
-                                }) {
-                                    Text(
-                                        when (repeatMode) {
-                                            Player.REPEAT_MODE_ALL -> "REPEAT ALL"
-                                            Player.REPEAT_MODE_ONE -> "REPEAT ONE"
-                                            else -> "REPEAT OFF"
-                                        },
-                                        color = if (repeatMode == Player.REPEAT_MODE_OFF) Muted else Accent,
-                                        fontSize = 8.sp
-                                    )
-                                }
-                                OutlinedButton(onClick = { replaceQueueOnPick = false; picker.launch(arrayOf("audio/*")) }) { Text("ADD TRACKS", fontSize = 8.sp) }
-                                OutlinedButton(onClick = { replaceQueueOnPick = true; picker.launch(arrayOf("audio/*")) }) { Text("NEW QUEUE", fontSize = 8.sp) }
-                            }
-                            OutlinedButton(onClick = { resetEqualizer() }) { Text("RESET EQUALIZER") }
-                            Text("Processing is currently applied to this app's local player, not system-wide audio.", color = Muted, fontSize = 10.sp)
                         }
                     }
                 }
             }
             Row(
                 Modifier.fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 7.dp)
-                    .background(Color(0xFF15191D), RoundedCornerShape(22.dp))
-                    .padding(5.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    .padding(horizontal = 34.dp, vertical = 6.dp)
+                    .background(Color(0xFF15191D), RoundedCornerShape(24.dp))
+                    .padding(horizontal = 7.dp, vertical = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                listOf("EQUALIZER" to "▥", "TONE" to "◉", "DYNAMICS" to "≈", "PRESETS" to "☷")
-                    .forEachIndexed { index, item ->
-                        val active = pagerState.currentPage == index
-                        Column(
-                            Modifier.weight(1f)
-                                .background(
-                                    if (active) Color(0xFF30363C) else Color.Transparent,
-                                    RoundedCornerShape(17.dp)
-                                )
-                                .clickable { pageScope.launch { pagerState.animateScrollToPage(index) } }
-                                .padding(vertical = 5.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(1.dp)
-                        ) {
-                            Text(
-                                item.second,
-                                color = if (active) Accent else Color(0xFF9099A2),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
+                listOf("▥", "◉", "≈", "☷").forEachIndexed { index, glyph ->
+                    val active = pagerState.currentPage == index
+                    Box(
+                        Modifier.weight(1f).height(38.dp)
+                            .background(
+                                if (active) Color(0xFF30363C) else Color.Transparent,
+                                CircleShape
                             )
-                            Text(
-                                item.first,
-                                color = if (active) Color.White else Color(0xFF8B949D),
-                                fontSize = 7.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.45.sp
-                            )
-                        }
+                            .clickable { pageScope.launch { pagerState.animateScrollToPage(index) } },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            glyph,
+                            color = if (active) Accent else Color(0xFF9099A2),
+                            fontSize = 21.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
+                }
             }
             Divider(color = Color(0xFF252B30), thickness = 1.dp)
             Row(
@@ -1539,7 +1550,13 @@ private fun ProDspContent(player: MediaController) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(Modifier.weight(1f).clickable { pageScope.launch { pagerState.animateScrollToPage(3) } }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(
+                    Modifier.weight(1f).clickable {
+                        replaceQueueOnPick = true
+                        picker.launch(arrayOf("audio/*"))
+                    },
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     Text(
                         trackName,
                         color = Color.White,
@@ -1566,6 +1583,12 @@ private fun ProDspContent(player: MediaController) {
                         trackColor = Color(0xFF303940)
                     )
                 }
+                OutlinedButton(
+                    onClick = { replaceQueueOnPick = false; picker.launch(arrayOf("audio/*")) },
+                    modifier = Modifier.size(34.dp),
+                    contentPadding = PaddingValues(0.dp),
+                    shape = CircleShape
+                ) { Text("+", fontSize = 18.sp, color = Color.White) }
                 OutlinedButton(
                     onClick = {
                         if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
