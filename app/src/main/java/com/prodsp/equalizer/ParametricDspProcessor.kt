@@ -67,6 +67,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     }
     private var fftWriteIndex = 0
     @Volatile private var spectrumBands = FloatArray(48)
+    // The audio thread fills the work buffer and swaps it with the published
+    // snapshot. Readers copy under a short lock, so the callback never allocates.
+    private val spectrumLock = Any()
+    private var spectrumWork = FloatArray(48)
     @Volatile private var sampleRate = 0
     @Volatile private var pcmEncoding = C.ENCODING_PCM_16BIT
     private var channelCount = 0
@@ -269,7 +273,15 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         reverbDampingPercent = reverbDampingPercent
     )
 
-    fun spectrumSnapshot(): FloatArray = spectrumBands.copyOf()
+    fun spectrumSnapshot(): FloatArray = synchronized(spectrumLock) {
+        spectrumBands.copyOf()
+    }
+
+    private fun clearSpectrum() = synchronized(spectrumLock) {
+        spectrumBands.fill(0f)
+        spectrumWork.fill(0f)
+    }
+
     fun currentSampleRate(): Int = sampleRate.takeIf { it > 0 } ?: 48_000
     fun maximumFrequencyHz(): Float = minOf(20_000f, currentSampleRate() * 0.475f).coerceAtLeast(20f)
 
@@ -347,7 +359,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         }
 
         val previous = spectrumBands
-        val next = FloatArray(48)
+        val next = spectrumWork
         val rate = sampleRate.coerceAtLeast(1).toFloat()
         val scale = 2f / fftSize
         for (band in next.indices) {
@@ -370,7 +382,10 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             val normalized = ((db + 72f) / 72f).coerceIn(0f, 1f)
             next[band] = maxOf(normalized, previous[band] * 0.72f)
         }
-        spectrumBands = next
+        synchronized(spectrumLock) {
+            spectrumBands = next
+            spectrumWork = previous
+        }
     }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
@@ -601,9 +616,34 @@ class ParametricDspProcessor : BaseAudioProcessor() {
 
     private fun softLimit(x: Float): Float {
         val magnitude = abs(x)
-        if (magnitude <= 0.88f) return x
-        val compressed = 0.88f + 0.12f * (1f - exp(-((magnitude - 0.88f) / 0.12f)))
+        if (magnitude <= SOFT_LIMIT_START) return x
+
+        val position = ((magnitude - SOFT_LIMIT_START) * SOFT_LIMIT_TABLE_SCALE)
+            .coerceIn(0f, SOFT_LIMIT_TABLE_LAST.toFloat())
+        val lowerIndex = position.toInt()
+        val upperIndex = minOf(lowerIndex + 1, SOFT_LIMIT_TABLE_LAST)
+        val fraction = position - lowerIndex
+        val lower = SOFT_LIMIT_TABLE[lowerIndex]
+        val upper = SOFT_LIMIT_TABLE[upperIndex]
+        val compressed = lower + (upper - lower) * fraction
         return if (x < 0f) -compressed else compressed
+    }
+
+    private companion object {
+        const val SOFT_LIMIT_START = 0.88f
+        const val SOFT_LIMIT_MAX = 8f
+        const val SOFT_LIMIT_TABLE_LAST = 4096
+        const val SOFT_LIMIT_TABLE_SCALE =
+            SOFT_LIMIT_TABLE_LAST / (SOFT_LIMIT_MAX - SOFT_LIMIT_START)
+
+        // Build the nonlinear transfer curve once, not repeatedly on the
+        // real-time audio thread for every sample above the knee.
+        val SOFT_LIMIT_TABLE = FloatArray(SOFT_LIMIT_TABLE_LAST + 1) { index ->
+            val magnitude = SOFT_LIMIT_START +
+                (SOFT_LIMIT_MAX - SOFT_LIMIT_START) * index / SOFT_LIMIT_TABLE_LAST
+            SOFT_LIMIT_START +
+                0.12f * (1f - exp(-((magnitude - SOFT_LIMIT_START) / 0.12f)))
+        }
     }
 
     override fun onFlush() {
@@ -619,7 +659,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         currentReverbDamping = reverbDampingPercent
         reverbProcessor?.clear()
         fftWriteIndex = 0
-        spectrumBands = FloatArray(48)
+        clearSpectrum()
         filters.forEach { it.clearState() }
         lowShelfFilter?.clearState()
         highShelfFilter?.clearState()
@@ -633,7 +673,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         compressorGain = 1f
         limiterGain = 1f
         fftWriteIndex = 0
-        spectrumBands = FloatArray(48)
+        clearSpectrum()
         filters = emptyArray()
         lowShelfFilter = null
         highShelfFilter = null

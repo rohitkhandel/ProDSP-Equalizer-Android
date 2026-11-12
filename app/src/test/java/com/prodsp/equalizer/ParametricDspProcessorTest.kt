@@ -9,6 +9,7 @@ import org.junit.Test
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
+import kotlin.math.exp
 import kotlin.math.sin
 import kotlin.math.pow
 import kotlin.math.sqrt
@@ -132,6 +133,29 @@ class ParametricDspProcessorTest {
             for (index in input.indices) {
                 assertEquals("Unexpected float sample delta at $index", input[index], output[index], 1e-7f)
             }
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
+    fun peakGuardSoftLimitsFloatPcmWithSymmetricCurve() {
+        val processor = createFloatProcessor()
+        try {
+            processor.setPeakGuard(true)
+            processor.setLimiterEnabled(false)
+            processor.flush()
+
+            val input = floatArrayOf(1.25f, -1.25f, 0.5f, -0.5f)
+            val output = processFloat(processor, input)
+            val expectedPeak = 0.88f +
+                0.12f * (1f - exp(-((1.25f - 0.88f) / 0.12f)))
+
+            assertEquals(input.size, output.size)
+            assertEquals(expectedPeak, output[0], 0.0001f)
+            assertEquals(-expectedPeak, output[1], 0.0001f)
+            assertEquals(0.5f, output[2], 0.000001f)
+            assertEquals(-0.5f, output[3], 0.000001f)
         } finally {
             processor.reset()
         }
