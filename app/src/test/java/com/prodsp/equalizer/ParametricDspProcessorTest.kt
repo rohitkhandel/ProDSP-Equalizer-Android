@@ -45,6 +45,35 @@ class ParametricDspProcessorTest {
         return result
     }
 
+    private fun createFloatProcessor(): ParametricDspProcessor {
+        return ParametricDspProcessor().also { processor ->
+            processor.configure(
+                AudioProcessor.AudioFormat(
+                    48_000,
+                    2,
+                    C.ENCODING_PCM_FLOAT
+                )
+            )
+            processor.flush()
+            processor.setPeakGuard(false)
+            processor.setLimiterEnabled(false)
+            processor.setCompressorEnabled(false)
+        }
+    }
+
+    private fun processFloat(
+        processor: ParametricDspProcessor,
+        samples: FloatArray
+    ): FloatArray {
+        val input = ByteBuffer.allocateDirect(samples.size * 4).order(ByteOrder.LITTLE_ENDIAN)
+        samples.forEach(input::putFloat)
+        input.flip()
+        processor.queueInput(input)
+
+        val output = processor.output.order(ByteOrder.LITTLE_ENDIAN)
+        return FloatArray(output.remaining() / 4) { output.float }
+    }
+
     @Test
     fun flatEqPassesPcmSignalWithoutChangingItsLevel() {
         val processor = createProcessor()
@@ -86,6 +115,56 @@ class ParametricDspProcessorTest {
                     kotlin.math.abs(input[index].toInt() - output[index].toInt()) <= 1
                 )
             }
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
+    fun floatPcmPathPreservesFlatSignalWithoutIntegerQuantization() {
+        val processor = createFloatProcessor()
+        try {
+            val input = FloatArray(4_096) { index ->
+                (0.18 * sin(2.0 * PI * index / 79.0)).toFloat()
+            }
+            val output = processFloat(processor, input)
+            assertEquals(input.size, output.size)
+            for (index in input.indices) {
+                assertEquals("Unexpected float sample delta at $index", input[index], output[index], 1e-7f)
+            }
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
+    fun floatPcmPathAppliesParametricBoostUsingDoublePrecisionEqSections() {
+        val processor = createFloatProcessor()
+        try {
+            processor.setBandFrequency(0, 1_000f)
+            processor.setBandQ(0, 1f)
+            processor.setBandGain(0, 6f)
+            processor.flush()
+
+            val frames = 24_000
+            val input = FloatArray(frames * 2)
+            for (frame in 0 until frames) {
+                val sample = (0.06 * sin(2.0 * PI * 1_000.0 * frame / 48_000.0)).toFloat()
+                input[frame * 2] = sample
+                input[frame * 2 + 1] = sample
+            }
+            val output = processFloat(processor, input)
+
+            var inputPower = 0.0
+            var outputPower = 0.0
+            for (frame in frames / 2 until frames) {
+                val source = input[frame * 2].toDouble()
+                val rendered = output[frame * 2].toDouble()
+                inputPower += source * source
+                outputPower += rendered * rendered
+            }
+            val gain = sqrt(outputPower / inputPower)
+            assertEquals(10.0.pow(6.0 / 20.0), gain, 0.035)
         } finally {
             processor.reset()
         }

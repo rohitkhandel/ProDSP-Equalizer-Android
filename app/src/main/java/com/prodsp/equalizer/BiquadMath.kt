@@ -29,6 +29,18 @@ data class BiquadCoefficients(
 )
 
 /**
+ * Double-precision coefficients used by the real-time EQ stage.
+ * Control/UI math can continue to use the Float representation.
+ */
+data class BiquadCoefficients64(
+    val b0: Double,
+    val b1: Double,
+    val b2: Double,
+    val a1: Double,
+    val a2: Double
+)
+
+/**
  * RBJ Audio EQ Cookbook coefficient and response math.
  *
  * This is intentionally pure Kotlin so filter math can be unit-tested without
@@ -126,6 +138,106 @@ object BiquadMath {
 
         val safeA0 = if (kotlin.math.abs(a0) < 1e-12f) 1e-12f else a0
         return BiquadCoefficients(
+            b0 / safeA0,
+            b1 / safeA0,
+            b2 / safeA0,
+            a1 / safeA0,
+            a2 / safeA0
+        )
+    }
+
+    /**
+     * RBJ coefficients computed and retained in Double precision for the audio
+     * path. This keeps repeated cascaded EQ sections from accumulating the
+     * additional rounding of Float coefficient/state arithmetic.
+     */
+    fun coefficients64(
+        sampleRate: Int,
+        frequencyHz: Float,
+        q: Float,
+        gainDb: Float,
+        type: BiquadFilterType
+    ): BiquadCoefficients64 {
+        require(sampleRate > 0) { "Sample rate must be positive" }
+        val nyquistSafeFrequency = (sampleRate * 0.475).coerceAtLeast(10.1)
+        val frequency = frequencyHz.toDouble().coerceIn(10.0, nyquistSafeFrequency)
+        val safeQ = q.toDouble().coerceIn(0.3, 8.0)
+        val omega = 2.0 * PI * frequency / sampleRate
+        val cosine = cos(omega)
+        val sine = sin(omega)
+        val alpha = sine / (2.0 * safeQ)
+        val amplitude = 10.0.pow(gainDb.toDouble() / 40.0)
+
+        val b0: Double
+        val b1: Double
+        val b2: Double
+        val a0: Double
+        val a1: Double
+        val a2: Double
+
+        when (type) {
+            BiquadFilterType.PEAK -> {
+                b0 = 1.0 + alpha * amplitude
+                b1 = -2.0 * cosine
+                b2 = 1.0 - alpha * amplitude
+                a0 = 1.0 + alpha / amplitude
+                a1 = -2.0 * cosine
+                a2 = 1.0 - alpha / amplitude
+            }
+            BiquadFilterType.LOW_SHELF -> {
+                val beta = 2.0 * sqrt(amplitude) * alpha
+                b0 = amplitude * ((amplitude + 1.0) - (amplitude - 1.0) * cosine + beta)
+                b1 = 2.0 * amplitude * ((amplitude - 1.0) - (amplitude + 1.0) * cosine)
+                b2 = amplitude * ((amplitude + 1.0) - (amplitude - 1.0) * cosine - beta)
+                a0 = (amplitude + 1.0) + (amplitude - 1.0) * cosine + beta
+                a1 = -2.0 * ((amplitude - 1.0) + (amplitude + 1.0) * cosine)
+                a2 = (amplitude + 1.0) + (amplitude - 1.0) * cosine - beta
+            }
+            BiquadFilterType.HIGH_SHELF -> {
+                val beta = 2.0 * sqrt(amplitude) * alpha
+                b0 = amplitude * ((amplitude + 1.0) + (amplitude - 1.0) * cosine + beta)
+                b1 = -2.0 * amplitude * ((amplitude - 1.0) + (amplitude + 1.0) * cosine)
+                b2 = amplitude * ((amplitude + 1.0) + (amplitude - 1.0) * cosine - beta)
+                a0 = (amplitude + 1.0) - (amplitude - 1.0) * cosine + beta
+                a1 = 2.0 * ((amplitude - 1.0) - (amplitude + 1.0) * cosine)
+                a2 = (amplitude + 1.0) - (amplitude - 1.0) * cosine - beta
+            }
+            BiquadFilterType.LOW_PASS -> {
+                b0 = (1.0 - cosine) / 2.0
+                b1 = 1.0 - cosine
+                b2 = (1.0 - cosine) / 2.0
+                a0 = 1.0 + alpha
+                a1 = -2.0 * cosine
+                a2 = 1.0 - alpha
+            }
+            BiquadFilterType.HIGH_PASS -> {
+                b0 = (1.0 + cosine) / 2.0
+                b1 = -(1.0 + cosine)
+                b2 = (1.0 + cosine) / 2.0
+                a0 = 1.0 + alpha
+                a1 = -2.0 * cosine
+                a2 = 1.0 - alpha
+            }
+            BiquadFilterType.BAND_PASS -> {
+                b0 = alpha
+                b1 = 0.0
+                b2 = -alpha
+                a0 = 1.0 + alpha
+                a1 = -2.0 * cosine
+                a2 = 1.0 - alpha
+            }
+            BiquadFilterType.NOTCH -> {
+                b0 = 1.0
+                b1 = -2.0 * cosine
+                b2 = 1.0
+                a0 = 1.0 + alpha
+                a1 = -2.0 * cosine
+                a2 = 1.0 - alpha
+            }
+        }
+
+        val safeA0 = if (kotlin.math.abs(a0) < 1e-18) 1e-18 else a0
+        return BiquadCoefficients64(
             b0 / safeA0,
             b1 / safeA0,
             b2 / safeA0,

@@ -68,6 +68,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     private var fftWriteIndex = 0
     @Volatile private var spectrumBands = FloatArray(48)
     @Volatile private var sampleRate = 0
+    @Volatile private var pcmEncoding = C.ENCODING_PCM_16BIT
     private var channelCount = 0
     private val frameScratch = FloatArray(2)
     private val dryFrameScratch = FloatArray(2)
@@ -373,13 +374,14 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
-        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT ||
+        if (inputAudioFormat.encoding !in setOf(C.ENCODING_PCM_16BIT, C.ENCODING_PCM_FLOAT) ||
             inputAudioFormat.channelCount !in 1..2 ||
             inputAudioFormat.sampleRate <= 0
         ) {
             throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
         }
         sampleRate = inputAudioFormat.sampleRate
+        pcmEncoding = inputAudioFormat.encoding
         channelCount = inputAudioFormat.channelCount
         filters = Array(31) { Filter(channelCount) }
         lowShelfFilter = Filter(channelCount)
@@ -400,14 +402,14 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         val solo = soloBandIndex
         for (i in 0 until 31) {
             if (i >= count || !enabledBands[i] || (solo >= 0 && solo != i)) {
-                filters[i].setTarget(BiquadCoefficients(1f, 0f, 0f, 0f, 0f))
+                filters[i].setTarget(BiquadCoefficients64(1.0, 0.0, 0.0, 0.0, 0.0))
             } else {
                 val frequency = frequencies[i].coerceIn(20f, sampleRate * 0.475f)
-                filters[i].setTarget(BiquadMath.coefficients(sampleRate, frequency, qs[i], gains[i], types[i]))
+                filters[i].setTarget(BiquadMath.coefficients64(sampleRate, frequency, qs[i], gains[i], types[i]))
             }
         }
-        lowShelfFilter?.setTarget(BiquadMath.coefficients(sampleRate, lowToneFrequencyHz, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF))
-        highShelfFilter?.setTarget(BiquadMath.coefficients(sampleRate, highToneFrequencyHz, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF))
+        lowShelfFilter?.setTarget(BiquadMath.coefficients64(sampleRate, lowToneFrequencyHz, 0.707f, lowToneDb, BiquadFilterType.LOW_SHELF))
+        highShelfFilter?.setTarget(BiquadMath.coefficients64(sampleRate, highToneFrequencyHz, 0.707f, highToneDb, BiquadFilterType.HIGH_SHELF))
 
         if (autoHeadroomEnabled) {
             val effectiveEnabled = BooleanArray(31) { index ->
@@ -464,7 +466,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         } else 1f
         val frame = frameScratch
 
-        while (input.remaining() >= 2 * channelCount) {
+        val bytesPerSample = if (pcmEncoding == C.ENCODING_PCM_FLOAT) 4 else 2
+        while (input.remaining() >= bytesPerSample * channelCount) {
             // Keep filter state warm even while bypassed, then blend the
             // processed and dry signals over 10 ms to avoid abrupt switching.
             lowShelfFilter?.advance(transitionRemaining)
@@ -480,13 +483,20 @@ class ParametricDspProcessor : BaseAudioProcessor() {
 
             var framePeak = 0f
             for (channel in 0 until channelCount) {
-                val drySample = input.short.toInt() / 32768f
+                val drySample = if (pcmEncoding == C.ENCODING_PCM_FLOAT) {
+                    input.float
+                } else {
+                    input.short.toInt() / 32768f
+                }
                 dryFrameScratch[channel] = drySample
-                var wetSample = lowShelfFilter?.process(drySample, channel) ?: drySample
+
+                // EQ filter coefficients and delay states stay Double precision,
+                // even when the surrounding player pipeline uses Float PCM.
+                var wetSample = lowShelfFilter?.process(drySample.toDouble(), channel) ?: drySample.toDouble()
                 for (band in 0 until bandCount) wetSample = filters[band].process(wetSample, channel)
                 wetSample = highShelfFilter?.process(wetSample, channel) ?: wetSample
-                wetSample *= currentPreampGain
-                frame[channel] = wetSample
+                wetSample *= currentPreampGain.toDouble()
+                frame[channel] = wetSample.toFloat()
             }
 
             // Mid/Side stereo width. 100% is transparent, 0% folds to mono,
@@ -570,8 +580,12 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 sample = dryFrameScratch[channel] +
                     (sample - dryFrameScratch[channel]) * enabledMix
                 frame[channel] = sample
-                val quantized = (sample.coerceIn(-1f, 0.9999695f) * 32768f).toInt()
-                output.putShort(quantized.toShort())
+                if (pcmEncoding == C.ENCODING_PCM_FLOAT) {
+                    output.putFloat(sample.coerceIn(-1f, 1f))
+                } else {
+                    val quantized = (sample.coerceIn(-1f, 0.9999695f) * 32768f).toInt()
+                    output.putShort(quantized.toShort())
+                }
             }
             val spectrumLeft = frame[0]
             val spectrumRight = if (channelCount == 2) frame[1] else frame[0]
@@ -627,18 +641,19 @@ class ParametricDspProcessor : BaseAudioProcessor() {
     }
 
     private class Filter(channels: Int) {
-        // Mutable scalar coefficients avoid allocating a data class on the
-        // audio thread for every sample during a parameter transition.
-        private var currentB0 = 1f
-        private var currentB1 = 0f
-        private var currentB2 = 0f
-        private var currentA1 = 0f
-        private var currentA2 = 0f
-        @Volatile private var target = BiquadCoefficients(1f, 0f, 0f, 0f, 0f)
-        private val z1 = FloatArray(channels)
-        private val z2 = FloatArray(channels)
+        // Double coefficients and per-channel delay state keep EQ sections in
+        // 64-bit precision. Targets are created on the control thread and
+        // published atomically; the audio loop does not allocate.
+        private var currentB0 = 1.0
+        private var currentB1 = 0.0
+        private var currentB2 = 0.0
+        private var currentA1 = 0.0
+        private var currentA2 = 0.0
+        @Volatile private var target = BiquadCoefficients64(1.0, 0.0, 0.0, 0.0, 0.0)
+        private val z1 = DoubleArray(channels)
+        private val z2 = DoubleArray(channels)
 
-        fun setTarget(value: BiquadCoefficients) {
+        fun setTarget(value: BiquadCoefficients64) {
             target = value
         }
 
@@ -652,7 +667,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
                 currentA2 = next.a2
                 return
             }
-            val amount = 1f / remaining.coerceAtLeast(1)
+            val amount = 1.0 / remaining.coerceAtLeast(1)
             currentB0 += (next.b0 - currentB0) * amount
             currentB1 += (next.b1 - currentB1) * amount
             currentB2 += (next.b2 - currentB2) * amount
@@ -660,7 +675,7 @@ class ParametricDspProcessor : BaseAudioProcessor() {
             currentA2 += (next.a2 - currentA2) * amount
         }
 
-        fun process(input: Float, channel: Int): Float {
+        fun process(input: Double, channel: Int): Double {
             val output = currentB0 * input + z1[channel]
             z1[channel] = currentB1 * input - currentA1 * output + z2[channel]
             z2[channel] = currentB2 * input - currentA2 * output
@@ -668,8 +683,8 @@ class ParametricDspProcessor : BaseAudioProcessor() {
         }
 
         fun clearState() {
-            z1.fill(0f)
-            z2.fill(0f)
+            z1.fill(0.0)
+            z2.fill(0.0)
         }
     }
 }
