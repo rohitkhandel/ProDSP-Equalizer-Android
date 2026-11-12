@@ -920,6 +920,8 @@ private fun ProDspContent(player: MediaController) {
     val audioManager = remember(context) {
         context.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
     }
+    // DisposableEffect is long-lived; expose the latest profile ID to its callback.
+    val activeOutputProfileId by rememberUpdatedState(activeOutputProfile.id)
     val loadDevicePreset by rememberUpdatedState<(String) -> Unit> { key ->
         val internalName = "__device_${key}"
         if (preferences.contains("preset_${internalName}")) {
@@ -930,7 +932,7 @@ private fun ProDspContent(player: MediaController) {
     DisposableEffect(audioManager) {
         fun refreshOutputProfile() {
             val next = detectOutputProfile(audioManager)
-            if (next.id != activeOutputProfile.id) {
+            if (next.id != activeOutputProfileId) {
                 activeOutputProfile = next
                 loadDevicePreset(next.id)
             }
