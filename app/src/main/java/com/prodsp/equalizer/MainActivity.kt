@@ -1828,6 +1828,10 @@ private fun PlayerControlIcon(kind: Int, tint: Color) {
                 drawRoundRect(tint, Offset(w * 0.22f, h * 0.13f), androidx.compose.ui.geometry.Size(w * 0.2f, h * 0.74f), androidx.compose.ui.geometry.CornerRadius(w * 0.06f))
                 drawRoundRect(tint, Offset(w * 0.58f, h * 0.13f), androidx.compose.ui.geometry.Size(w * 0.2f, h * 0.74f), androidx.compose.ui.geometry.CornerRadius(w * 0.06f))
             }
+            4 -> {
+                drawLine(tint, Offset(w * 0.5f, h * 0.2f), Offset(w * 0.5f, h * 0.8f), w * 0.1f, cap = StrokeCap.Round)
+                drawLine(tint, Offset(w * 0.2f, h * 0.5f), Offset(w * 0.8f, h * 0.5f), w * 0.1f, cap = StrokeCap.Round)
+            }
             else -> {
                 drawCircle(tint, radius = w * 0.43f)
                 drawCircle(Color(0xFF171717), radius = w * 0.28f)
